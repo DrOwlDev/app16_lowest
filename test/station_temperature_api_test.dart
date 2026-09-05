@@ -224,6 +224,24 @@ void main() {
     });
   });
 
+  group('forecast data source labels', () {
+    test('NWS / NBM / Open-Meteo labels are distinct', () {
+      expect(StationTemperatureApi.nwsForecastDataSource, 'api.weather.gov');
+      expect(
+        StationTemperatureApi.openMeteoNbmForecastDataSource,
+        contains('NBM'),
+      );
+      expect(
+        StationTemperatureApi.openMeteoNbmModel,
+        'ncep_nbm_conus',
+      );
+      expect(
+        StationTemperatureApi.openMeteoForecastDataSource,
+        'api.open-meteo.com',
+      );
+    });
+  });
+
   group('chart eligibility smoke', () {
     test('timeseries site id present for WRH URLs', () {
       expect(

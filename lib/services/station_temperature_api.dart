@@ -146,6 +146,9 @@ tz.TZDateTime _tzFromUtcIso(String? iso, tz.Location location) {
 }
 
 /// Fetches observed METARs + hourly forecast for a WRH timeseries site day.
+///
+/// Forecast preference: api.weather.gov hourly → Open-Meteo NBM (CONUS) →
+/// default Open-Meteo (last resort / non-US).
 class StationTemperatureApi {
   StationTemperatureApi({http.Client? client})
       : _client = client ?? http.Client();
@@ -160,7 +163,11 @@ class StationTemperatureApi {
   static const defaultObservedDataSource =
       'https://www.weather.gov/wrh/timeseries';
   static const nwsForecastDataSource = 'api.weather.gov';
+  /// Open-Meteo National Blend of Models (CONUS) — preferred US fallback.
+  static const openMeteoNbmForecastDataSource =
+      'api.open-meteo.com (NBM)';
   static const openMeteoForecastDataSource = 'api.open-meteo.com';
+  static const openMeteoNbmModel = 'ncep_nbm_conus';
 
   final http.Client _client;
 
@@ -304,6 +311,7 @@ class StationTemperatureApi {
     required tz.TZDateTime dayStart,
     required tz.TZDateTime dayEnd,
   }) async {
+    // 1) Official NWS WFO hourly (best match for weather.gov US sites).
     final nws = await _fetchNwsHourlyC(
       lat: lat,
       lon: lon,
@@ -314,6 +322,21 @@ class StationTemperatureApi {
     if (nws.isNotEmpty) {
       return (temps: nws, source: nwsForecastDataSource);
     }
+
+    // 2) NOAA NBM via Open-Meteo (better US fallback than default blend).
+    final nbm = await _fetchOpenMeteoHourlyC(
+      lat: lat,
+      lon: lon,
+      location: location,
+      dayStart: dayStart,
+      dayEnd: dayEnd,
+      models: openMeteoNbmModel,
+    );
+    if (nbm.isNotEmpty) {
+      return (temps: nbm, source: openMeteoNbmForecastDataSource);
+    }
+
+    // 3) Default Open-Meteo (last resort / non-US coverage).
     final om = await _fetchOpenMeteoHourlyC(
       lat: lat,
       lon: lon,
@@ -396,17 +419,20 @@ class StationTemperatureApi {
     required tz.Location location,
     required tz.TZDateTime dayStart,
     required tz.TZDateTime dayEnd,
+    String? models,
   }) async {
-    final uri = Uri.parse(_openMeteoBase).replace(
-      queryParameters: {
-        'latitude': lat.toString(),
-        'longitude': lon.toString(),
-        'hourly': 'temperature_2m',
-        'forecast_days': '2',
-        'past_days': '1',
-        'timezone': 'auto',
-      },
-    );
+    final query = <String, String>{
+      'latitude': lat.toString(),
+      'longitude': lon.toString(),
+      'hourly': 'temperature_2m',
+      'forecast_days': '2',
+      'past_days': '1',
+      'timezone': 'auto',
+    };
+    if (models != null && models.isNotEmpty) {
+      query['models'] = models;
+    }
+    final uri = Uri.parse(_openMeteoBase).replace(queryParameters: query);
     final response = await _client.get(uri);
     if (response.statusCode != 200) return {};
     final decoded = jsonDecode(response.body);
