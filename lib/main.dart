@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -54,7 +55,7 @@ enum _ListStrategy {
 }
 
 class _MarketListPageState extends State<MarketListPage> {
-  final PolymarketApi _api = PolymarketApi();
+  final PolymarketApi _api = PolymarketApi(preferStaticSnapshot: kIsWeb);
   final TextEditingController _searchController = TextEditingController();
   final NumberFormat _volumeFormat = NumberFormat.compactCurrency(
     symbol: '\$',

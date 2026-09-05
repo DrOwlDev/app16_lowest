@@ -1,17 +1,25 @@
 # app16_lowest
 
-A new Flutter project.
+Flutter app for browsing Polymarket **lowest-temperature** weather markets.
 
-## Getting Started
+## Windows (live APIs)
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run -d windows
+```
 
-A few resources to get you started if this is your first Flutter project:
+Uses Polymarket Gamma + CLOB directly.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## GitHub Pages (static snapshot)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Web build reads `data/markets.json` (same-origin) so browser CORS is not required.
+
+- Site: https://drowldev.github.io/app16_lowest/
+- Deploy workflow: builds Flutter web on every `main` push
+- Refresh workflow: updates `data/markets.json` on `gh-pages` about every 5 minutes
+
+```bash
+dart run tool/export_markets.dart web/data/markets.json
+flutter build web --release --base-href /app16_lowest/
+```

@@ -140,9 +140,33 @@ class OutcomeMarket {
       bestBid: _asNullableDouble(json['bestBid']),
       bestAsk: _asNullableDouble(json['bestAsk']),
       lastTradePrice: _asNullableDouble(json['lastTradePrice']),
-      yesTokenId: tokenIds.isNotEmpty ? tokenIds[0] : null,
-      noTokenId: tokenIds.length > 1 ? tokenIds[1] : null,
+      yesTokenId: json['yesTokenId']?.toString() ??
+          (tokenIds.isNotEmpty ? tokenIds[0] : null),
+      noTokenId: json['noTokenId']?.toString() ??
+          (tokenIds.length > 1 ? tokenIds[1] : null),
+      clobBuyYes: _asNullableDouble(json['clobBuyYes']),
+      clobBuyNo: _asNullableDouble(json['clobBuyNo']),
     );
+  }
+
+  Map<String, dynamic> toSnapshotJson() {
+    return {
+      'id': id,
+      'question': question,
+      'groupItemTitle': groupItemTitle,
+      'outcomes': outcomes,
+      'outcomePrices': outcomePrices.map((e) => e.toString()).toList(),
+      'volume': volume,
+      if (bestBid != null) 'bestBid': bestBid,
+      if (bestAsk != null) 'bestAsk': bestAsk,
+      if (lastTradePrice != null) 'lastTradePrice': lastTradePrice,
+      'clobTokenIds': [
+        if (yesTokenId != null) yesTokenId,
+        if (noTokenId != null) noTokenId,
+      ],
+      if (clobBuyYes != null) 'clobBuyYes': clobBuyYes,
+      if (clobBuyNo != null) 'clobBuyNo': clobBuyNo,
+    };
   }
 }
 
@@ -353,6 +377,18 @@ class MarketEvent {
       endDate: _parseDate(json['endDate']),
       markets: markets,
     );
+  }
+
+  Map<String, dynamic> toSnapshotJson() {
+    return {
+      'id': id,
+      'title': title,
+      'slug': slug,
+      'volume': volume,
+      'volume24hr': volume24hr,
+      if (endDate != null) 'endDate': endDate!.toUtc().toIso8601String(),
+      'markets': markets.map((m) => m.toSnapshotJson()).toList(),
+    };
   }
 }
 

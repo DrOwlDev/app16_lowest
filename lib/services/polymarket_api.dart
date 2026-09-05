@@ -5,18 +5,70 @@ import 'package:http/http.dart' as http;
 import '../models/market_event.dart';
 
 /// Fetches Lowest Temperature events from Polymarket Gamma API.
+///
+/// When [preferStaticSnapshot] is true (GitHub Pages web build), loads a
+/// same-origin snapshot at `data/markets.json` so browser CORS to Polymarket
+/// is not required. Windows keeps live Gamma + CLOB calls.
 class PolymarketApi {
-  PolymarketApi({http.Client? client}) : _client = client ?? http.Client();
+  PolymarketApi({
+    http.Client? client,
+    this.preferStaticSnapshot = false,
+  }) : _client = client ?? http.Client();
 
   static const int lowestTemperatureTagId = 104597;
   static const String _baseUrl = 'https://gamma-api.polymarket.com';
   static const String _clobUrl = 'https://clob.polymarket.com';
   static const int _pageSize = 100;
+  static const String staticSnapshotPath = 'data/markets.json';
 
   final http.Client _client;
+  final bool preferStaticSnapshot;
+
+  bool get _useStaticSnapshot => preferStaticSnapshot;
 
   /// Pages through all active, open events tagged Lowest temperature.
   Future<List<MarketEvent>> fetchLowestTemperatureEvents() async {
+    if (_useStaticSnapshot) {
+      return _fetchFromStaticSnapshot();
+    }
+    return _fetchFromGamma();
+  }
+
+  Future<List<MarketEvent>> _fetchFromStaticSnapshot() async {
+    final uri = Uri.parse(
+      '$staticSnapshotPath?t=${DateTime.now().millisecondsSinceEpoch}',
+    );
+    final response = await _client.get(uri);
+    if (response.statusCode != 200) {
+      throw PolymarketApiException(
+        'Static snapshot returned ${response.statusCode}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final List<dynamic> rawEvents;
+    if (decoded is Map && decoded['events'] is List) {
+      rawEvents = decoded['events'] as List<dynamic>;
+    } else if (decoded is List) {
+      rawEvents = decoded;
+    } else {
+      throw const PolymarketApiException(
+        'Unexpected static snapshot shape',
+      );
+    }
+
+    return rawEvents.map((item) {
+      if (item is Map<String, dynamic>) {
+        return MarketEvent.fromJson(item);
+      }
+      if (item is Map) {
+        return MarketEvent.fromJson(Map<String, dynamic>.from(item));
+      }
+      throw const PolymarketApiException('Invalid event in snapshot');
+    }).toList();
+  }
+
+  Future<List<MarketEvent>> _fetchFromGamma() async {
     final events = <MarketEvent>[];
     var offset = 0;
 
@@ -66,11 +118,12 @@ class PolymarketApi {
 
   /// Fetches CLOB best-ask (SELL) prices for Yes/No tokens of [markets].
   ///
-  /// Polymarket's `/prices` SELL side is the price to buy that token.
+  /// On web, skips the live CLOB call (snapshot already includes asks).
   Future<List<OutcomeMarket>> enrichBuyPrices(
     List<OutcomeMarket> markets,
   ) async {
     if (markets.isEmpty) return markets;
+    if (_useStaticSnapshot) return markets;
 
     const chunkSize = 80;
     var result = List<OutcomeMarket>.from(markets);
@@ -89,6 +142,7 @@ class PolymarketApi {
   Future<List<MarketEvent>> enrichEventsBuyPrices(
     List<MarketEvent> events,
   ) async {
+    if (_useStaticSnapshot) return events;
     final flat = events.expand((e) => e.markets).toList();
     if (flat.isEmpty) return events;
     final enriched = await enrichBuyPrices(flat);
