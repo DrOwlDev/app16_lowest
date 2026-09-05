@@ -13,14 +13,18 @@ class HourlyTempPoint {
     required this.localHourStart,
     required this.temperature,
     required this.kind,
+    this.dataSource = '',
     this.isDailyMinimum = false,
     this.isDailyMaximum = false,
   });
 
-  /// City-local hour start (timezone-aware).
+  /// City-local timestamp for this sample (may be sub-hourly for observations).
   final tz.TZDateTime localHourStart;
   final double temperature;
   final TempPointKind kind;
+
+  /// Where the value came from (WRH URL, api.weather.gov, api.open-meteo.com, …).
+  final String dataSource;
 
   /// True when this hour ties the observation-day minimum temperature.
   final bool isDailyMinimum;
@@ -29,6 +33,7 @@ class HourlyTempPoint {
   final bool isDailyMaximum;
 
   HourlyTempPoint copyWith({
+    String? dataSource,
     bool? isDailyMinimum,
     bool? isDailyMaximum,
   }) {
@@ -36,6 +41,7 @@ class HourlyTempPoint {
       localHourStart: localHourStart,
       temperature: temperature,
       kind: kind,
+      dataSource: dataSource ?? this.dataSource,
       isDailyMinimum: isDailyMinimum ?? this.isDailyMinimum,
       isDailyMaximum: isDailyMaximum ?? this.isDailyMaximum,
     );
@@ -72,6 +78,12 @@ class StationTemperatureApi {
   static const _userAgent =
       'app16_lowest (https://github.com/DrOwlDev/app16_lowest)';
 
+  /// Default observed label when the market resolution URL is unavailable.
+  static const defaultObservedDataSource =
+      'https://www.weather.gov/wrh/timeseries';
+  static const nwsForecastDataSource = 'api.weather.gov';
+  static const openMeteoForecastDataSource = 'api.open-meteo.com';
+
   final http.Client _client;
 
   Future<DailyTemperatureSeries> fetchDailySeries({
@@ -81,6 +93,7 @@ class StationTemperatureApi {
     required int month,
     required int day,
     required String unit,
+    String? observedDataSource,
     DateTime? nowUtc,
   }) async {
     final location = CityTimezones.locationForCity(cityName) ?? tz.UTC;
@@ -98,7 +111,7 @@ class StationTemperatureApi {
       dayEnd.toUtc().difference(DateTime.now().toUtc()).inHours.abs() + 36,
     );
 
-    final obsC = await _fetchMetarHourlyC(
+    final obsC = await _fetchMetarObservationsC(
       icao: icao,
       location: location,
       dayStart: dayStart,
@@ -106,16 +119,24 @@ class StationTemperatureApi {
       hours: hoursNeeded.clamp(24, 72),
     );
 
-    Map<int, double> forecastC = {};
+    var forecastC = <int, double>{};
+    var forecastSource = openMeteoForecastDataSource;
     if (station != null) {
-      forecastC = await _fetchForecastHourlyC(
+      final forecast = await _fetchForecastHourlyC(
         lat: station.lat,
         lon: station.lon,
         location: location,
         dayStart: dayStart,
         dayEnd: dayEnd,
       );
+      forecastC = forecast.temps;
+      forecastSource = forecast.source;
     }
+
+    final obsSource = (observedDataSource != null &&
+            observedDataSource.trim().isNotEmpty)
+        ? observedDataSource.trim()
+        : defaultObservedDataSource;
 
     final points = mergeHourlySeries(
       dayStart: dayStart,
@@ -124,6 +145,8 @@ class StationTemperatureApi {
       observedC: obsC,
       forecastC: forecastC,
       unit: unit == 'F' ? 'F' : 'C',
+      observedDataSource: obsSource,
+      forecastDataSource: forecastSource,
     );
 
     return DailyTemperatureSeries(
@@ -152,7 +175,7 @@ class StationTemperatureApi {
     return (lat: lat, lon: lon);
   }
 
-  Future<Map<int, double>> _fetchMetarHourlyC({
+  Future<Map<int, double>> _fetchMetarObservationsC({
     required String icao,
     required tz.Location location,
     required tz.TZDateTime dayStart,
@@ -188,7 +211,7 @@ class StationTemperatureApi {
       if (obsUtc == null) continue;
       samples.add((utc: obsUtc, tempC: temp));
     }
-    return bucketMetarObservations(
+    return indexMetarObservations(
       location: location,
       dayStart: dayStart,
       dayEnd: dayEnd,
@@ -196,7 +219,7 @@ class StationTemperatureApi {
     );
   }
 
-  Future<Map<int, double>> _fetchForecastHourlyC({
+  Future<({Map<int, double> temps, String source})> _fetchForecastHourlyC({
     required double lat,
     required double lon,
     required tz.Location location,
@@ -210,14 +233,17 @@ class StationTemperatureApi {
       dayStart: dayStart,
       dayEnd: dayEnd,
     );
-    if (nws.isNotEmpty) return nws;
-    return _fetchOpenMeteoHourlyC(
+    if (nws.isNotEmpty) {
+      return (temps: nws, source: nwsForecastDataSource);
+    }
+    final om = await _fetchOpenMeteoHourlyC(
       lat: lat,
       lon: lon,
       location: location,
       dayStart: dayStart,
       dayEnd: dayEnd,
     );
+    return (temps: om, source: openMeteoForecastDataSource);
   }
 
   Future<Map<int, double>> _fetchNwsHourlyC({
@@ -346,46 +372,34 @@ class StationTemperatureApi {
   void close() => _client.close();
 }
 
-class _ObsCandidate {
-  const _ObsCandidate({required this.tempC, required this.score});
-  final double tempC;
-  final int score;
-}
-
-/// Prefer METARs near top-of-hour (:50–:59), then close to :00.
-int metarHourScore(int minute) {
-  if (minute >= 50) return 100 + minute;
-  if (minute <= 10) return 80 - minute;
-  return 40 - (minute - 30).abs();
-}
-
-/// Bucket METAR samples into city-local hours (best score wins).
-Map<int, double> bucketMetarObservations({
+/// Index METAR samples at native local resolution (minute precision).
+///
+/// Stations that report every 30 minutes (e.g. VILK) keep both :00 and :30
+/// points instead of collapsing to one value per hour. Later samples win on
+/// the same local minute.
+Map<int, double> indexMetarObservations({
   required tz.Location location,
   required tz.TZDateTime dayStart,
   required tz.TZDateTime dayEnd,
   required List<({DateTime utc, double tempC})> samples,
 }) {
-  final candidates = <int, _ObsCandidate>{};
-  for (final sample in samples) {
+  final sorted = [...samples]
+    ..sort((a, b) => a.utc.toUtc().compareTo(b.utc.toUtc()));
+  final out = <int, double>{};
+  for (final sample in sorted) {
     final local = tz.TZDateTime.from(sample.utc.toUtc(), location);
-    final hourStart = tz.TZDateTime(
+    final atMinute = tz.TZDateTime(
       location,
       local.year,
       local.month,
       local.day,
       local.hour,
+      local.minute,
     );
-    // Include next-day local 00:00 (dayEnd) as the series endpoint.
-    if (hourStart.isBefore(dayStart) || hourStart.isAfter(dayEnd)) continue;
-    final key = hourStart.millisecondsSinceEpoch;
-    final score = metarHourScore(local.minute);
-    final existing = candidates[key];
-    if (existing == null || score > existing.score) {
-      candidates[key] = _ObsCandidate(tempC: sample.tempC, score: score);
-    }
+    if (atMinute.isBefore(dayStart) || atMinute.isAfter(dayEnd)) continue;
+    out[atMinute.millisecondsSinceEpoch] = sample.tempC;
   }
-  return {for (final e in candidates.entries) e.key: e.value.tempC};
+  return out;
 }
 
 double celsiusToFahrenheit(double c) => c * 9 / 5 + 32;
@@ -395,9 +409,11 @@ double fahrenheitToCelsius(double f) => (f - 32) * 5 / 9;
 double convertTempC(double tempC, String unit) =>
     unit == 'F' ? celsiusToFahrenheit(tempC) : tempC;
 
-/// Pure merge used by API and unit tests.
+/// Merge native-resolution observations with hourly forecasts.
 ///
-/// Includes hours `[dayStart, dayEnd]` so next-day local 00:00 is plotted.
+/// Observed points keep their native timestamps (e.g. every 30 min). Forecast
+/// points stay on the hour for times after [nowLocal] (and the current hour
+/// when no observation exists in that hour). Includes next-day local 00:00.
 List<HourlyTempPoint> mergeHourlySeries({
   required tz.TZDateTime dayStart,
   required tz.TZDateTime dayEnd,
@@ -405,57 +421,75 @@ List<HourlyTempPoint> mergeHourlySeries({
   required Map<int, double> observedC,
   required Map<int, double> forecastC,
   required String unit,
+  String observedDataSource =
+      StationTemperatureApi.defaultObservedDataSource,
+  String forecastDataSource =
+      StationTemperatureApi.openMeteoForecastDataSource,
 }) {
+  final location = dayStart.location;
   final points = <HourlyTempPoint>[];
+
+  bool hasObsInHour(tz.TZDateTime hourStart) {
+    final hourEnd = hourStart.add(const Duration(hours: 1));
+    for (final key in observedC.keys) {
+      final t = tz.TZDateTime.fromMillisecondsSinceEpoch(location, key);
+      if (!t.isBefore(hourStart) && t.isBefore(hourEnd)) return true;
+    }
+    return false;
+  }
+
+  final obsKeys = observedC.keys.toList()..sort();
+  for (final key in obsKeys) {
+    final t = tz.TZDateTime.fromMillisecondsSinceEpoch(location, key);
+    if (t.isBefore(dayStart) || t.isAfter(dayEnd)) continue;
+    if (t.isAfter(nowLocal)) continue;
+    points.add(
+      HourlyTempPoint(
+        localHourStart: t,
+        temperature: convertTempC(observedC[key]!, unit),
+        kind: TempPointKind.observed,
+        dataSource: observedDataSource,
+      ),
+    );
+  }
+
   var hour = dayStart;
-  // Inclusive of dayEnd (next local midnight).
   while (!hour.isAfter(dayEnd)) {
     final key = hour.millisecondsSinceEpoch;
-    final hourEnd = hour.add(const Duration(hours: 1));
-    final obs = observedC[key];
     final fc = forecastC[key];
-
-    double? tempC;
-    TempPointKind? kind;
-
-    if (!hourEnd.isAfter(nowLocal)) {
-      // Fully in the past → observed only.
-      if (obs != null) {
-        tempC = obs;
-        kind = TempPointKind.observed;
+    final hourEnd = hour.add(const Duration(hours: 1));
+    if (fc != null) {
+      final containsNow =
+          !nowLocal.isBefore(hour) && nowLocal.isBefore(hourEnd);
+      final fullyFuture = !hour.isBefore(nowLocal);
+      if (fullyFuture || (containsNow && !hasObsInHour(hour))) {
+        // Avoid duplicating a forecast at the same instant as an observation.
+        final alreadyObs = observedC.containsKey(key) &&
+            !tz.TZDateTime.fromMillisecondsSinceEpoch(location, key)
+                .isAfter(nowLocal);
+        if (!alreadyObs) {
+          points.add(
+            HourlyTempPoint(
+              localHourStart: hour,
+              temperature: convertTempC(fc, unit),
+              kind: TempPointKind.forecast,
+              dataSource: forecastDataSource,
+            ),
+          );
+        }
       }
-    } else if (!hour.isBefore(nowLocal)) {
-      // Fully in the future → forecast only.
-      if (fc != null) {
-        tempC = fc;
-        kind = TempPointKind.forecast;
-      }
-    } else {
-      // Hour contains now → prefer observed.
-      if (obs != null) {
-        tempC = obs;
-        kind = TempPointKind.observed;
-      } else if (fc != null) {
-        tempC = fc;
-        kind = TempPointKind.forecast;
-      }
-    }
-
-    if (tempC != null && kind != null) {
-      points.add(
-        HourlyTempPoint(
-          localHourStart: hour,
-          temperature: convertTempC(tempC, unit),
-          kind: kind,
-        ),
-      );
     }
     hour = hourEnd;
   }
+
+  points.sort(
+    (a, b) => a.localHourStart.millisecondsSinceEpoch
+        .compareTo(b.localHourStart.millisecondsSinceEpoch),
+  );
   return markDailyExtremes(points, dayEnd);
 }
 
-/// Marks observation-day hours that tie the day's min/max temperature.
+/// Marks observation-day samples that tie the day's min/max temperature.
 ///
 /// Next-day local midnight ([dayEnd]) is excluded from the extreme set.
 List<HourlyTempPoint> markDailyExtremes(

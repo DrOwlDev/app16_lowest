@@ -39,12 +39,26 @@ class DailyTemperatureChart extends StatelessWidget {
           dayEndMs,
         );
 
-    final spots = <FlSpot>[
-      for (final p in points)
-        FlSpot(
+    FlSpot spotFor(HourlyTempPoint p) => FlSpot(
           p.localHourStart.millisecondsSinceEpoch.toDouble(),
           p.temperature,
-        ),
+        );
+
+    final observedPoints = [
+      for (final p in points)
+        if (p.kind == TempPointKind.observed) p,
+    ];
+    final forecastPoints = [
+      for (final p in points)
+        if (p.kind == TempPointKind.forecast) p,
+    ];
+    final observedSpots = [for (final p in observedPoints) spotFor(p)];
+    // Bridge from last observed so the yellow segment connects at "now".
+    final bridgeObserved =
+        observedSpots.isNotEmpty && forecastPoints.isNotEmpty;
+    final forecastSpots = <FlSpot>[
+      if (bridgeObserved) observedSpots.last,
+      for (final p in forecastPoints) spotFor(p),
     ];
 
     var minY = points.first.temperature;
@@ -61,6 +75,7 @@ class DailyTemperatureChart extends StatelessWidget {
     final hourFmt = DateFormat('HH:mm');
     final dayFmt = DateFormat('MMM d');
     const lineColor = Color(0xFF111827);
+    const forecastLineColor = Color(0xFFEAB308);
     const minColor = Color(0xFF2563EB);
     const minStroke = Color(0xFF1D4ED8);
     const maxColor = Color(0xFFEA580C);
@@ -245,14 +260,18 @@ class DailyTemperatureChart extends StatelessWidget {
                             }
                           }
                           final tags = <String>[
+                            if (point?.kind == TempPointKind.observed)
+                              'Observed',
+                            if (point?.kind == TempPointKind.forecast)
+                              'Forecasted',
                             if (point?.isDailyMinimum == true) 'min',
                             if (point?.isDailyMaximum == true) 'max',
                           ];
                           final tagSuffix =
-                              tags.isEmpty ? '' : ' · ${tags.join('/')}';
+                              tags.isEmpty ? '' : ' · ${tags.join(' · ')}';
                           final tempUnit = series.unit == 'F' ? 'F' : 'C';
                           return LineTooltipItem(
-                            '${_formatPointDateTime(local, hourFmt)} '
+                            '${_formatPointDateTime(local, hourFmt)}\n'
                             '${spot.y.toStringAsFixed(1)}$tempUnit$tagSuffix',
                             const TextStyle(
                               color: Colors.white,
@@ -265,41 +284,93 @@ class DailyTemperatureChart extends StatelessWidget {
                     ),
                   ),
                   lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: false,
-                      color: lineColor,
-                      barWidth: 2,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(
-                        show: true,
-                        getDotPainter: (spot, percent, bar, index) {
-                          final point = points[index];
-                          if (point.isDailyMaximum) {
-                            return const _FlDotStarPainter(
-                              color: maxColor,
-                              strokeColor: maxStroke,
-                              size: 12,
+                    if (observedSpots.isNotEmpty)
+                      LineChartBarData(
+                        spots: observedSpots,
+                        isCurved: false,
+                        color: lineColor,
+                        barWidth: 2,
+                        isStrokeCapRound: true,
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (spot, percent, bar, index) {
+                            final point = observedPoints[index];
+                            if (point.isDailyMaximum) {
+                              return const _FlDotStarPainter(
+                                color: maxColor,
+                                strokeColor: maxStroke,
+                                size: 12,
+                              );
+                            }
+                            if (point.isDailyMinimum) {
+                              return const _FlDotStarPainter(
+                                color: minColor,
+                                strokeColor: minStroke,
+                                size: 12,
+                              );
+                            }
+                            return FlDotCirclePainter(
+                              radius: 2.5,
+                              color: lineColor,
+                              strokeWidth: 1.5,
+                              strokeColor: lineColor,
                             );
-                          }
-                          if (point.isDailyMinimum) {
-                            return const _FlDotStarPainter(
-                              color: minColor,
-                              strokeColor: minStroke,
-                              size: 12,
-                            );
-                          }
-                          final filled = point.kind == TempPointKind.observed;
-                          return FlDotCirclePainter(
-                            radius: 2.5,
-                            color: filled ? lineColor : Colors.white,
-                            strokeWidth: 1.5,
-                            strokeColor: lineColor,
-                          );
-                        },
+                          },
+                        ),
+                        belowBarData: BarAreaData(show: false),
                       ),
-                      belowBarData: BarAreaData(show: false),
-                    ),
+                    if (forecastSpots.isNotEmpty)
+                      LineChartBarData(
+                        spots: forecastSpots,
+                        isCurved: false,
+                        color: forecastLineColor,
+                        barWidth: 2,
+                        isStrokeCapRound: true,
+                        dotData: FlDotData(
+                          show: true,
+                          checkToShowDot: (spot, bar) {
+                            // Hide bridge duplicate of last observed point.
+                            if (!bridgeObserved) return true;
+                            final bridge = forecastSpots.first;
+                            return spot.x != bridge.x || spot.y != bridge.y;
+                          },
+                          getDotPainter: (spot, percent, bar, index) {
+                            final pointIndex =
+                                bridgeObserved ? index - 1 : index;
+                            if (pointIndex < 0 ||
+                                pointIndex >= forecastPoints.length) {
+                              return FlDotCirclePainter(
+                                radius: 0,
+                                color: Colors.transparent,
+                                strokeWidth: 0,
+                                strokeColor: Colors.transparent,
+                              );
+                            }
+                            final point = forecastPoints[pointIndex];
+                            if (point.isDailyMaximum) {
+                              return const _FlDotStarPainter(
+                                color: maxColor,
+                                strokeColor: maxStroke,
+                                size: 12,
+                              );
+                            }
+                            if (point.isDailyMinimum) {
+                              return const _FlDotStarPainter(
+                                color: minColor,
+                                strokeColor: minStroke,
+                                size: 12,
+                              );
+                            }
+                            return FlDotCirclePainter(
+                              radius: 2.5,
+                              color: Colors.white,
+                              strokeWidth: 1.5,
+                              strokeColor: forecastLineColor,
+                            );
+                          },
+                        ),
+                        belowBarData: BarAreaData(show: false),
+                      ),
                   ],
                 ),
               ),
@@ -390,10 +461,11 @@ class _TemperaturePointsTable extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Table(
         columnWidths: const {
-          0: FlexColumnWidth(2.4),
-          1: FlexColumnWidth(1.0),
-          2: FlexColumnWidth(1.2),
-          3: FlexColumnWidth(1.0),
+          0: FlexColumnWidth(2.2),
+          1: FlexColumnWidth(0.8),
+          2: FlexColumnWidth(1.1),
+          3: FlexColumnWidth(2.4),
+          4: FlexColumnWidth(0.8),
         },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         children: [
@@ -402,7 +474,8 @@ class _TemperaturePointsTable extends StatelessWidget {
             children: [
               header('Date / time'),
               header('Temp', align: TextAlign.right),
-              header('Source'),
+              header('Type'),
+              header('Data Source'),
               header('Extreme'),
             ],
           ),
@@ -425,7 +498,14 @@ class _TemperaturePointsTable extends StatelessWidget {
                 cell(
                   points[i].kind == TempPointKind.observed
                       ? 'Observed'
-                      : 'Forecast',
+                      : 'Forecasted',
+                ),
+                cell(
+                  points[i].dataSource.isEmpty ? '—' : points[i].dataSource,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade700,
+                  ),
                 ),
                 cell(
                   points[i].isDailyMaximum

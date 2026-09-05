@@ -122,10 +122,6 @@ class _MarketListPageState extends State<MarketListPage> {
   DateTime? _lastRefreshedAt;
   Timer? _autoRefreshTimer;
   Timer? _countdownTimer;
-  /// Minimum leading chance (0–1) required to show a market.
-  double _minConvergence = 0;
-  /// Minimum remaining minutes until city-local EOD (0 = show all active).
-  double _minMinutesToEod = 0;
   String? _expandedEventId;
   _ListStrategy _strategy = _ListStrategy.lockedWithNos;
   /// Hide thin temperature rows (Yes&lt;1¢ & No --). On by default.
@@ -158,7 +154,7 @@ class _MarketListPageState extends State<MarketListPage> {
   }
 
   /// Reloads all markets/odds from Polymarket. Preserves search and
-  /// convergence filter. [silent] avoids blanking the list while refreshing.
+  /// list filters. [silent] avoids blanking the list while refreshing.
   Future<void> _load({bool silent = false}) async {
     final hasData = _events.isNotEmpty;
     setState(() {
@@ -219,13 +215,9 @@ class _MarketListPageState extends State<MarketListPage> {
 
   List<MarketEvent> get _filtered {
     final query = _searchController.text.trim().toLowerCase();
-    final minMinutes = _minMinutesToEod.round();
     final list = _events.where((event) {
       final remaining = event.timeToLocalEndOfDay;
       if (remaining == null || remaining.isNegative) return false;
-      if (remaining.inMinutes < minMinutes) return false;
-      final leading = event.leadingYesPrice ?? 0;
-      if (leading < _minConvergence) return false;
       if (_strategy == _ListStrategy.lockedWithNos &&
           !event.matchesLockedMarketWithNos) {
         return false;
@@ -271,75 +263,6 @@ class _MarketListPageState extends State<MarketListPage> {
     }
   }
 
-  String get _convergenceLabel {
-    final pct = (_minConvergence * 100).round();
-    if (pct <= 0) return 'All';
-    return '≥$pct%';
-  }
-
-  String get _eodMinutesLabel {
-    final minutes = _minMinutesToEod.round();
-    if (minutes <= 0) return '≥0m';
-    if (minutes < 60) return '≥${minutes}m';
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    if (m == 0) return '≥${h}h';
-    return '≥${h}h ${m}m';
-  }
-
-  Widget _compactSlider({
-    required String title,
-    required double value,
-    required double min,
-    required double max,
-    required int divisions,
-    required String label,
-    required Color activeColor,
-    required ValueChanged<double> onChanged,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 72,
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-            ),
-            child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              divisions: divisions,
-              label: label,
-              activeColor: activeColor,
-              onChanged: onChanged,
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 52,
-          child: Text(
-            label,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -352,198 +275,178 @@ class _MarketListPageState extends State<MarketListPage> {
           padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
           child: Column(
             children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            hintText: 'Search city…',
-                            hintStyle: const TextStyle(fontSize: 13),
-                            prefixIcon: Icon(
-                              Icons.search,
-                              size: 18,
-                              color: scheme.primary,
-                            ),
-                            suffixIcon: _searchController.text.isEmpty
-                                ? null
-                                : IconButton(
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () => _searchController.clear(),
-                                    icon: const Icon(Icons.clear, size: 16),
-                                  ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
-                            ),
-                          ),
-                        ),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      'Strategy',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
                       ),
-                      if (_refreshing || (_loading && _events.isNotEmpty))
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 6),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      else if (_lastRefreshedAt != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
-                            DateFormat.Hm().format(_lastRefreshedAt!),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: scheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      Text(
-                        _loading
-                            ? '…'
-                            : '${filtered.length}/${_events.length}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.primary,
-                        ),
-                      ),
-                      if (kIsWeb)
-                        IconButton(
-                          tooltip: 'Trigger data refresh on GitHub Actions',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _openUrl(
-                            'https://github.com/DrOwlDev/app16_lowest/actions/workflows/refresh-data.yml',
-                          ),
-                          icon: const Icon(Icons.cloud_sync_outlined, size: 18),
-                        ),
-                      IconButton(
-                        tooltip: 'Open Polymarket',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _openUrl(
-                          'https://polymarket.com/weather/low-temperature',
-                        ),
-                        icon: const Icon(Icons.open_in_new, size: 18),
-                      ),
-                      IconButton(
-                        tooltip: 'Refresh',
-                        visualDensity: VisualDensity.compact,
-                        onPressed:
-                            (_loading || _refreshing) ? null : () => _load(),
-                        icon: const Icon(Icons.refresh, size: 18),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 72,
-                        child: Text(
-                          'Strategy',
+                  Expanded(
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<_ListStrategy>(
+                          value: _strategy,
+                          isDense: true,
+                          isExpanded: true,
                           style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
                             color: scheme.onSurface,
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: InputDecorator(
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 2,
+                          items: const [
+                            DropdownMenuItem(
+                              value: _ListStrategy.showAll,
+                              child: Text('Show All'),
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<_ListStrategy>(
-                              value: _strategy,
-                              isDense: true,
-                              isExpanded: true,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurface,
+                            DropdownMenuItem(
+                              value: _ListStrategy.lockedWithNos,
+                              child: Text(
+                                'Find Locked Market (≥ 90%) with No\'s Opportunities',
                               ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: _ListStrategy.showAll,
-                                  child: Text('Show All'),
-                                ),
-                                DropdownMenuItem(
-                                  value: _ListStrategy.lockedWithNos,
-                                  child: Text(
-                                    'Find Locked Market (≥ 90%) with No\'s Opportunities',
-                                  ),
-                                ),
-                              ],
-                              onChanged: _onStrategyChanged,
                             ),
-                          ),
+                          ],
+                          onChanged: _onStrategyChanged,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                  CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        hintText: 'Search city…',
+                        hintStyle: const TextStyle(fontSize: 13),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          size: 18,
+                          color: scheme.primary,
+                        ),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _searchController.clear(),
+                                icon: const Icon(Icons.clear, size: 16),
+                              ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Checkbox(
                     visualDensity: VisualDensity.compact,
-                    controlAffinity: ListTileControlAffinity.leading,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     value: _hideThinOutcomes,
                     onChanged: (value) {
                       setState(() => _hideThinOutcomes = value ?? true);
                     },
-                    title: const Text(
+                  ),
+                  const Flexible(
+                    child: Text(
                       'Hide thin rows (Yes <1¢ & No --)',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  _compactSlider(
-                    title: 'Min conv.',
-                    value: _minConvergence,
-                    min: 0,
-                    max: 0.95,
-                    divisions: 95,
-                    label: _convergenceLabel,
-                    activeColor: _yesAccent(
-                      _minConvergence <= 0 ? 0.6 : _minConvergence,
+                  if (_refreshing || (_loading && _events.isNotEmpty))
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else if (_lastRefreshedAt != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        DateFormat.Hm().format(_lastRefreshedAt!),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    onChanged: (value) {
-                      setState(() => _minConvergence = value);
-                    },
+                  Text(
+                    _loading
+                        ? '…'
+                        : '${filtered.length}/${_events.length}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.primary,
+                    ),
                   ),
-                  _compactSlider(
-                    title: 'Min to EOD',
-                    value: _minMinutesToEod,
-                    min: 0,
-                    max: 12 * 60,
-                    divisions: 48,
-                    label: _eodMinutesLabel,
-                    activeColor: const Color(0xFFB45309),
-                    onChanged: (value) {
-                      setState(() => _minMinutesToEod = value);
-                    },
+                  if (kIsWeb)
+                    IconButton(
+                      tooltip: 'Trigger data refresh on GitHub Actions',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _openUrl(
+                        'https://github.com/DrOwlDev/app16_lowest/actions/workflows/refresh-data.yml',
+                      ),
+                      icon: const Icon(Icons.cloud_sync_outlined, size: 18),
+                    ),
+                  IconButton(
+                    tooltip: 'Open Polymarket',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _openUrl(
+                      'https://polymarket.com/weather/low-temperature',
+                    ),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                  ),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    visualDensity: VisualDensity.compact,
+                    onPressed:
+                        (_loading || _refreshing) ? null : () => _load(),
+                    icon: const Icon(Icons.refresh, size: 18),
                   ),
                 ],
               ),
-            ),
-            Expanded(child: _buildBody(filtered)),
-          ],
+            ],
+          ),
+        ),
+        Expanded(child: _buildBody(filtered)),
+      ],
     );
   }
 
@@ -615,13 +518,6 @@ class _MarketListPageState extends State<MarketListPage> {
       ),
     );
   }
-}
-
-Color _yesAccent(double? yes) {
-  if (yes == null) return const Color(0xFF94A3B8);
-  if (yes >= 0.55) return const Color(0xFF0B6E4F);
-  if (yes >= 0.30) return const Color(0xFFD97706);
-  return const Color(0xFF64748B);
 }
 
 /// Distinct badge colors so consecutive calendar days don't share a hue.
@@ -843,6 +739,8 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         month: day.month,
         day: day.day,
         unit: widget.event.temperatureUnit ?? 'C',
+        observedDataSource: widget.event.resolutionSourceUrl ??
+            widget.event.resolutionSourceOpenUrl,
       );
       if (!mounted) return;
       setState(() {

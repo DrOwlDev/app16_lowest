@@ -165,6 +165,26 @@ void main() {
       expect(maxes.single.temperature, 15);
       expect(maxes.single.isDailyMinimum, isFalse);
     });
+
+    test('assigns observed and forecast data sources', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 14);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({10: 5}),
+        forecastC: hourMap({16: 8}),
+        unit: 'C',
+        observedDataSource: 'https://www.weather.gov/wrh/timeseries?site=ksea',
+        forecastDataSource: StationTemperatureApi.nwsForecastDataSource,
+      );
+      final obs = points.singleWhere((p) => p.localHourStart.hour == 10);
+      final fc = points.singleWhere((p) => p.localHourStart.hour == 16);
+      expect(obs.kind, TempPointKind.observed);
+      expect(obs.dataSource, contains('weather.gov/wrh/timeseries'));
+      expect(fc.kind, TempPointKind.forecast);
+      expect(fc.dataSource, 'api.weather.gov');
+    });
   });
 
   group('chart eligibility smoke', () {
@@ -189,34 +209,64 @@ void main() {
     });
   });
 
-  group('METAR hour bucketing', () {
-    test('prefers :53 over :20 in the same local hour', () {
+  group('METAR native resolution', () {
+    test('keeps both :00 and :30 samples in the same local hour', () {
       final seattle = tz.getLocation('America/Los_Angeles');
       final dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
       final dayEnd = dayStart.add(const Duration(days: 1));
-      // 15:20 and 15:53 PDT = UTC 22:20 and 22:53 on Mar 20 (PDT = UTC-7).
-      final bucketed = bucketMetarObservations(
+      // 15:00 and 15:30 PDT = UTC 22:00 and 22:30 on Mar 20 (PDT = UTC-7).
+      final indexed = indexMetarObservations(
         location: seattle,
         dayStart: dayStart,
         dayEnd: dayEnd,
         samples: [
-          (utc: DateTime.utc(2026, 3, 20, 22, 20), tempC: 11),
-          (utc: DateTime.utc(2026, 3, 20, 22, 53), tempC: 10),
+          (utc: DateTime.utc(2026, 3, 20, 22, 0), tempC: 11),
+          (utc: DateTime.utc(2026, 3, 20, 22, 30), tempC: 10),
         ],
       );
-      final key =
+      final at00 =
           tz.TZDateTime(seattle, 2026, 3, 20, 15).millisecondsSinceEpoch;
-      expect(bucketed[key], 10);
-      expect(metarHourScore(53) > metarHourScore(20), isTrue);
-      expect(metarHourScore(55) > metarHourScore(5), isTrue);
+      final at30 =
+          tz.TZDateTime(seattle, 2026, 3, 20, 15, 30).millisecondsSinceEpoch;
+      expect(indexed[at00], 11);
+      expect(indexed[at30], 10);
     });
 
-    test('merge keeps single bucketed observed value per hour', () {
+    test('merge plots sub-hourly observations before now', () {
+      final seattle = tz.getLocation('America/Los_Angeles');
+      final dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 15, 45);
+      final at00 =
+          tz.TZDateTime(seattle, 2026, 3, 20, 15).millisecondsSinceEpoch;
+      final at30 =
+          tz.TZDateTime(seattle, 2026, 3, 20, 15, 30).millisecondsSinceEpoch;
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: {at00: 11, at30: 10},
+        forecastC: {
+          tz.TZDateTime(seattle, 2026, 3, 20, 16).millisecondsSinceEpoch: 9,
+        },
+        unit: 'C',
+      );
+      final obs = points.where((p) => p.kind == TempPointKind.observed).toList();
+      expect(obs, hasLength(2));
+      expect(obs.map((p) => p.localHourStart.minute).toList(), [0, 30]);
+      expect(
+        points.where((p) => p.kind == TempPointKind.forecast).single.temperature,
+        9,
+      );
+    });
+
+    test('merge keeps single observation at its native minute', () {
       final seattle = tz.getLocation('America/Los_Angeles');
       final dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
       final dayEnd = dayStart.add(const Duration(days: 1));
       final now = tz.TZDateTime(seattle, 2026, 3, 20, 12);
-      final key = tz.TZDateTime(seattle, 2026, 3, 20, 8).millisecondsSinceEpoch;
+      final key =
+          tz.TZDateTime(seattle, 2026, 3, 20, 8, 30).millisecondsSinceEpoch;
       final points = mergeHourlySeries(
         dayStart: dayStart,
         dayEnd: dayEnd,
@@ -227,6 +277,7 @@ void main() {
       );
       expect(points.single.temperature, 4.5);
       expect(points.single.localHourStart.hour, 8);
+      expect(points.single.localHourStart.minute, 30);
     });
   });
 }
