@@ -1,0 +1,462 @@
+import 'dart:convert';
+
+import 'package:timezone/timezone.dart' as tz;
+
+import '../services/city_timezones.dart';
+
+class OutcomeMarket {
+  const OutcomeMarket({
+    required this.id,
+    required this.question,
+    required this.groupItemTitle,
+    required this.outcomes,
+    required this.outcomePrices,
+    required this.volume,
+    this.bestBid,
+    this.bestAsk,
+    this.lastTradePrice,
+    this.yesTokenId,
+    this.noTokenId,
+    this.clobBuyYes,
+    this.clobBuyNo,
+  });
+
+  final String id;
+  final String question;
+  final String groupItemTitle;
+  final List<String> outcomes;
+  final List<double> outcomePrices;
+  final double volume;
+  final double? bestBid;
+  final double? bestAsk;
+  final double? lastTradePrice;
+  final String? yesTokenId;
+  final String? noTokenId;
+
+  /// Live CLOB best-ask for Yes (price to buy Yes), if loaded.
+  final double? clobBuyYes;
+
+  /// Live CLOB best-ask for No (price to buy No), if loaded.
+  final double? clobBuyNo;
+
+  /// Mid/last Yes from Gamma `outcomePrices` (can lag the live book).
+  double? get yesPrice {
+    if (outcomePrices.isEmpty) return null;
+    final yesIndex = outcomes.indexWhere((o) => o.toLowerCase() == 'yes');
+    if (yesIndex >= 0 && yesIndex < outcomePrices.length) {
+      return outcomePrices[yesIndex];
+    }
+    return outcomePrices.first;
+  }
+
+  double? get noPrice {
+    if (outcomePrices.length < 2) return null;
+    final noIndex = outcomes.indexWhere((o) => o.toLowerCase() == 'no');
+    if (noIndex >= 0 && noIndex < outcomePrices.length) {
+      return outcomePrices[noIndex];
+    }
+    return outcomePrices[1];
+  }
+
+  /// Price to buy Yes (0–1). Only a real ask — matches Polymarket "Buy Yes".
+  double? get buyYesPrice =>
+      _usableBuyPrice(clobBuyYes) ?? _usableBuyPrice(bestAsk);
+
+  /// Price to buy No (0–1), or null when shown as "--".
+  double? get buyNoPrice {
+    final fromClob = _usableBuyPrice(clobBuyNo);
+    if (fromClob != null) return fromClob;
+    if (bestBid != null) {
+      return _usableBuyPrice(1 - bestBid!);
+    }
+    return null;
+  }
+
+  /// Chance % for the event row, matching Polymarket's large percentage.
+  ///
+  /// Polymarket does **not** always show Buy Yes here. With a wide bid/ask
+  /// (illiquid book — e.g. Yes bid 8¢ / ask 93¢), the UI shows mid
+  /// `outcomePrices` (or last trade), while Buy Yes/No stay as the asks.
+  /// With a tight book, the displayed % tracks the Yes ask.
+  double? get displayChance {
+    final ask = buyYesPrice;
+    final bid = _usableBuyPrice(bestBid);
+    final last = _usableBuyPrice(lastTradePrice);
+    final mid = _usableBuyPrice(yesPrice);
+
+    // One-sided book with a stale/conflicting last trade → "-"
+    if (ask != null && bid == null && last != null) {
+      if ((ask - last).abs() >= 0.15) return null;
+    }
+
+    // Wide spread: Polymarket shows last/mid, not the ask (Ankara 13°C:
+    // ask 93¢ / bid 8¢ → "51%", not "93%").
+    if (ask != null && bid != null && (ask - bid) >= 0.15) {
+      if (last != null) return last;
+      if (mid != null) return mid;
+    }
+
+    if (ask != null) return ask;
+    if (last != null) return last;
+    return mid;
+  }
+
+  /// True when both buy sides are missing or effectively 0¢.
+  bool get bothBuysInactive =>
+      _isZeroOrMissing(buyYesPrice) && _isZeroOrMissing(buyNoPrice);
+
+  String get displayLabel {
+    if (groupItemTitle.isNotEmpty) return groupItemTitle;
+    return question;
+  }
+
+  OutcomeMarket copyWithClobPrices({double? buyYes, double? buyNo}) {
+    return OutcomeMarket(
+      id: id,
+      question: question,
+      groupItemTitle: groupItemTitle,
+      outcomes: outcomes,
+      outcomePrices: outcomePrices,
+      volume: volume,
+      bestBid: bestBid,
+      bestAsk: bestAsk,
+      lastTradePrice: lastTradePrice,
+      yesTokenId: yesTokenId,
+      noTokenId: noTokenId,
+      clobBuyYes: buyYes ?? clobBuyYes,
+      clobBuyNo: buyNo ?? clobBuyNo,
+    );
+  }
+
+  factory OutcomeMarket.fromJson(Map<String, dynamic> json) {
+    final tokenIds = _decodeStringList(json['clobTokenIds']);
+    return OutcomeMarket(
+      id: json['id']?.toString() ?? '',
+      question: json['question'] as String? ?? '',
+      groupItemTitle: json['groupItemTitle'] as String? ?? '',
+      outcomes: _decodeStringList(json['outcomes']),
+      outcomePrices: _decodeDoubleList(json['outcomePrices']),
+      volume: _asDouble(json['volumeNum'] ?? json['volume']),
+      bestBid: _asNullableDouble(json['bestBid']),
+      bestAsk: _asNullableDouble(json['bestAsk']),
+      lastTradePrice: _asNullableDouble(json['lastTradePrice']),
+      yesTokenId: tokenIds.isNotEmpty ? tokenIds[0] : null,
+      noTokenId: tokenIds.length > 1 ? tokenIds[1] : null,
+    );
+  }
+}
+
+class MarketEvent {
+  const MarketEvent({
+    required this.id,
+    required this.title,
+    required this.slug,
+    required this.volume,
+    required this.volume24hr,
+    required this.endDate,
+    required this.markets,
+  });
+
+  final String id;
+  final String title;
+  final String slug;
+  final double volume;
+  final double volume24hr;
+  final DateTime? endDate;
+  final List<OutcomeMarket> markets;
+
+  String get polymarketUrl => 'https://polymarket.com/event/$slug';
+
+  /// City extracted from titles like "Lowest temperature in Hong Kong on …".
+  String get cityName {
+    final match = RegExp(
+      r'Lowest temperature in (.+?) on ',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (match != null) return match.group(1)!.trim();
+    return title;
+  }
+
+  /// Highest displayed chance among outcomes (Buy Yes / last / mid).
+  double? get leadingYesPrice {
+    double? best;
+    for (final market in markets) {
+      final yes = market.displayChance;
+      if (yes == null) continue;
+      if (best == null || yes > best) best = yes;
+    }
+    return best;
+  }
+
+  /// ≥90% on one outcome, and Buy No > 1¢ on a different outcome with chance < 90%.
+  bool get matchesLockedMarketWithNos {
+    for (var i = 0; i < markets.length; i++) {
+      final highChance = markets[i].displayChance;
+      if (highChance == null || highChance < 0.90) continue;
+      for (var j = 0; j < markets.length; j++) {
+        if (i == j) continue;
+        final otherChance = markets[j].displayChance;
+        if (otherChance != null && otherChance >= 0.90) continue;
+        final no = markets[j].buyNoPrice;
+        if (no != null && no > 0.01) return true;
+      }
+    }
+    return false;
+  }
+
+  MarketEvent copyWith({List<OutcomeMarket>? markets}) {
+    return MarketEvent(
+      id: id,
+      title: title,
+      slug: slug,
+      volume: volume,
+      volume24hr: volume24hr,
+      endDate: endDate,
+      markets: markets ?? this.markets,
+    );
+  }
+
+  /// Top markets by displayed chance, for summary chips on the list row.
+  List<OutcomeMarket> topMarkets({int count = 2}) {
+    final withPrice = markets.where((m) => m.displayChance != null).toList()
+      ..sort(
+        (a, b) => (b.displayChance ?? 0).compareTo(a.displayChance ?? 0),
+      );
+    return withPrice.take(count).toList();
+  }
+
+  /// Calendar day of the observation (date in the city's timezone when possible).
+  DateTime? get observationDay {
+    final cityDay = observationDayInCity;
+    if (cityDay != null) {
+      return DateTime.utc(cityDay.year, cityDay.month, cityDay.day);
+    }
+    final d = endDate;
+    if (d == null) return null;
+    return DateTime.utc(d.year, d.month, d.day);
+  }
+
+  /// Observation Y/M/D in the market city's timezone.
+  ({int year, int month, int day})? get observationDayInCity {
+    final fromTitle = _observationDateFromTitle();
+    if (fromTitle != null) return fromTitle;
+
+    final d = endDate;
+    if (d == null) return null;
+    final location = CityTimezones.locationForCity(cityName);
+    if (location != null) {
+      final cityTime = tz.TZDateTime.from(d.toUtc(), location);
+      return (year: cityTime.year, month: cityTime.month, day: cityTime.day);
+    }
+    final utc = d.toUtc();
+    return (year: utc.year, month: utc.month, day: utc.day);
+  }
+
+  /// 23:59:59 on the observation day in the **city's** local timezone (UTC instant).
+  DateTime? get localEndOfDay {
+    final day = observationDayInCity;
+    if (day == null) return null;
+    final eod = CityTimezones.endOfDayUtc(
+      cityName: cityName,
+      year: day.year,
+      month: day.month,
+      day: day.day,
+    );
+    if (eod != null) return eod;
+
+    // Fallback: device-local EOD if city timezone is unknown.
+    final d = endDate;
+    if (d == null) return null;
+    final local = d.toLocal();
+    return DateTime(local.year, local.month, local.day, 23, 59, 59);
+  }
+
+  /// Remaining time until city-local 23:59:59 on the observation day.
+  Duration? get timeToLocalEndOfDay {
+    final eod = localEndOfDay;
+    if (eod == null) return null;
+    return eod.toUtc().difference(DateTime.now().toUtc());
+  }
+
+  ({int year, int month, int day})? _observationDateFromTitle() {
+    final match = RegExp(
+      r'on\s+([A-Za-z]+)\s+(\d{1,2})\??\s*$',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (match == null) return null;
+
+    final monthName = match.group(1)!.toLowerCase();
+    final day = int.tryParse(match.group(2)!);
+    if (day == null) return null;
+
+    const months = {
+      'january': 1,
+      'february': 2,
+      'march': 3,
+      'april': 4,
+      'may': 5,
+      'june': 6,
+      'july': 7,
+      'august': 8,
+      'september': 9,
+      'october': 10,
+      'november': 11,
+      'december': 12,
+    };
+    final month = months[monthName];
+    if (month == null) return null;
+
+    // Prefer year from endDate in the city zone; else UTC year.
+    var year = endDate?.toUtc().year;
+    final location = CityTimezones.locationForCity(cityName);
+    if (endDate != null && location != null) {
+      year = tz.TZDateTime.from(endDate!.toUtc(), location).year;
+    }
+    year ??= DateTime.now().year;
+
+    return (year: year, month: month, day: day);
+  }
+
+  MarketEvent withMarkets(List<OutcomeMarket> markets) {
+    return MarketEvent(
+      id: id,
+      title: title,
+      slug: slug,
+      volume: volume,
+      volume24hr: volume24hr,
+      endDate: endDate,
+      markets: markets,
+    );
+  }
+
+  factory MarketEvent.fromJson(Map<String, dynamic> json) {
+    final marketsJson = json['markets'];
+    final markets = <OutcomeMarket>[];
+    if (marketsJson is List) {
+      for (final item in marketsJson) {
+        if (item is Map<String, dynamic>) {
+          markets.add(OutcomeMarket.fromJson(item));
+        } else if (item is Map) {
+          markets.add(
+            OutcomeMarket.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+
+    return MarketEvent(
+      id: json['id']?.toString() ?? '',
+      title: json['title'] as String? ?? '',
+      slug: json['slug'] as String? ?? '',
+      volume: _asDouble(json['volume']),
+      volume24hr: _asDouble(json['volume24hr']),
+      endDate: _parseDate(json['endDate']),
+      markets: markets,
+    );
+  }
+}
+
+/// Formats a displayed chance as Polymarket-style percent, or "—".
+String formatChancePercent(double? chance) {
+  if (chance == null) return '—';
+  if (chance < 0.01) return '<1%';
+  final pct = (chance * 100).round();
+  return '$pct%';
+}
+
+/// Formats a 0–1 price as Polymarket-style cents, or "--".
+String formatBuyCents(double? price) {
+  if (_isZeroOrMissing(price)) return '--';
+  final cents = price! * 100;
+  if (cents < 1) {
+    final text = cents.toStringAsFixed(1);
+    if (text == '0.0') return '0¢';
+    return '$text¢';
+  }
+  if ((cents - cents.roundToDouble()).abs() < 0.05) {
+    return '${cents.round()}¢';
+  }
+  return '${cents.toStringAsFixed(1)}¢';
+}
+
+/// Formats remaining time until local end-of-day for a market.
+String formatTimeToEndOfDay(Duration? remaining) {
+  if (remaining == null) return '—';
+  if (remaining.isNegative) return 'EOD passed';
+  final days = remaining.inDays;
+  final hours = remaining.inHours.remainder(24);
+  final minutes = remaining.inMinutes.remainder(60);
+  if (days > 0) return '${days}d ${hours}h to EOD';
+  if (remaining.inHours > 0) return '${remaining.inHours}h ${minutes}m to EOD';
+  if (minutes > 0) return '${minutes}m to EOD';
+  return '<1m to EOD';
+}
+
+bool _isZeroOrMissing(double? price) {
+  if (price == null) return true;
+  if (price <= 0) return true;
+  if (price >= 1) return true;
+  // Treat sub-0.05¢ as 0¢ for filter purposes.
+  if (price * 100 < 0.05) return true;
+  return false;
+}
+
+double? _usableBuyPrice(double? price) {
+  if (price == null) return null;
+  if (price <= 0 || price >= 1) return null;
+  return price;
+}
+
+List<String> _decodeStringList(dynamic value) {
+  if (value == null) return const [];
+  if (value is List) {
+    return value.map((e) => e.toString()).toList();
+  }
+  if (value is String) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded.map((e) => e.toString()).toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+  }
+  return const [];
+}
+
+List<double> _decodeDoubleList(dynamic value) {
+  if (value == null) return const [];
+  if (value is List) {
+    return value.map(_asDouble).toList();
+  }
+  if (value is String) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded.map(_asDouble).toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+  }
+  return const [];
+}
+
+double _asDouble(dynamic value) {
+  if (value == null) return 0;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0;
+}
+
+double? _asNullableDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString());
+}
+
+DateTime? _parseDate(dynamic value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  return DateTime.tryParse(value.toString());
+}
