@@ -28,10 +28,13 @@ class LowTempApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0B6E4F),
           brightness: Brightness.light,
+          surface: Colors.white,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF0F4F2),
+        scaffoldBackgroundColor: Colors.white,
         cardTheme: CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
           elevation: 0.5,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
