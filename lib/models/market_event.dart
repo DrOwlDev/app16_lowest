@@ -282,13 +282,17 @@ class MarketEvent {
     return false;
   }
 
-  /// At least one temperature outcome with Buy Yes ≥ 95¢.
+  /// Exactly one temperature outcome with Buy Yes ≥ 95¢.
   bool get matchesBuyYesAtLeast95 {
+    var count = 0;
     for (final market in markets) {
       final yes = market.buyYesPrice;
-      if (yes != null && yes >= 0.95) return true;
+      if (yes != null && yes >= 0.95) {
+        count++;
+        if (count > 1) return false;
+      }
     }
-    return false;
+    return count == 1;
   }
 
   MarketEvent copyWith({

@@ -336,7 +336,7 @@ class _MarketListPageState extends State<MarketListPage> {
                             DropdownMenuItem(
                               value: _ListStrategy.buyYesGe95,
                               child: Text(
-                                'Find Markets with Buy Yes >95c',
+                                'Find Markets with only 1 Buy Yes >95c',
                               ),
                             ),
                           ],

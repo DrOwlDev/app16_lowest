@@ -139,7 +139,7 @@ void main() {
     );
   });
 
-  test('matchesBuyYesAtLeast95 requires a Buy Yes ≥ 95¢ outcome', () {
+  test('matchesBuyYesAtLeast95 requires exactly one Buy Yes ≥ 95¢ outcome', () {
     final below = MarketEvent.fromJson({
       'id': 'byes-1',
       'title': 'Lowest temperature in Dallas on September 5?',
@@ -157,7 +157,7 @@ void main() {
     });
     expect(below.matchesBuyYesAtLeast95, isFalse);
 
-    final atOrAbove = MarketEvent.fromJson({
+    final exactlyOne = MarketEvent.fromJson({
       'id': 'byes-2',
       'title': 'Lowest temperature in Dallas on September 5?',
       'slug': 'dallas',
@@ -180,7 +180,32 @@ void main() {
         },
       ],
     });
-    expect(atOrAbove.matchesBuyYesAtLeast95, isTrue);
+    expect(exactlyOne.matchesBuyYesAtLeast95, isTrue);
+
+    final twoHigh = MarketEvent.fromJson({
+      'id': 'byes-3',
+      'title': 'Lowest temperature in Dallas on September 5?',
+      'slug': 'dallas',
+      'markets': [
+        {
+          'id': 'a',
+          'question': '20°C?',
+          'groupItemTitle': '20°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+          'bestAsk': 0.96,
+        },
+        {
+          'id': 'b',
+          'question': '21°C?',
+          'groupItemTitle': '21°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+          'bestAsk': 0.95,
+        },
+      ],
+    });
+    expect(twoHigh.matchesBuyYesAtLeast95, isFalse);
   });
 
   test('displayChance prefers Buy Yes ask over outcomePrices mid', () {
