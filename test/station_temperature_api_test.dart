@@ -114,6 +114,53 @@ void main() {
       expect(points.every((p) => p.kind == TempPointKind.observed), isTrue);
       expect(points.map((p) => p.temperature).toList(), [1.0, 2.0]);
     });
+
+    test('includes next-day local midnight forecast', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 22);
+      final nextMidnight = dayEnd;
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({20: 5}),
+        forecastC: {
+          ...hourMap({23: 4}),
+          nextMidnight.millisecondsSinceEpoch: 3,
+        },
+        unit: 'C',
+      );
+      final endpoint = points.singleWhere(
+        (p) =>
+            p.localHourStart.millisecondsSinceEpoch ==
+            nextMidnight.millisecondsSinceEpoch,
+      );
+      expect(endpoint.temperature, 3);
+      expect(endpoint.kind, TempPointKind.forecast);
+      expect(endpoint.isDailyMinimum, isFalse);
+    });
+
+    test('marks all observation-day hours that tie the daily minimum', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 18);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({4: 10, 5: 10, 6: 12, 12: 15}),
+        forecastC: {
+          dayEnd.millisecondsSinceEpoch: 9, // colder but next day — not a day min
+        },
+        unit: 'C',
+      );
+      final mins = points.where((p) => p.isDailyMinimum).toList();
+      expect(mins.length, 2);
+      expect(mins.every((p) => p.temperature == 10), isTrue);
+      expect(
+        points
+            .singleWhere((p) => p.localHourStart == dayEnd)
+            .isDailyMinimum,
+        isFalse,
+      );
+    });
   });
 
   group('chart eligibility smoke', () {

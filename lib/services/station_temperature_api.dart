@@ -13,12 +13,25 @@ class HourlyTempPoint {
     required this.localHourStart,
     required this.temperature,
     required this.kind,
+    this.isDailyMinimum = false,
   });
 
   /// City-local hour start (timezone-aware).
   final tz.TZDateTime localHourStart;
   final double temperature;
   final TempPointKind kind;
+
+  /// True when this hour ties the observation-day minimum temperature.
+  final bool isDailyMinimum;
+
+  HourlyTempPoint copyWith({bool? isDailyMinimum}) {
+    return HourlyTempPoint(
+      localHourStart: localHourStart,
+      temperature: temperature,
+      kind: kind,
+      isDailyMinimum: isDailyMinimum ?? this.isDailyMinimum,
+    );
+  }
 }
 
 class DailyTemperatureSeries {
@@ -247,7 +260,6 @@ class StationTemperatureApi {
         final unit = p['temperatureUnit']?.toString().toUpperCase();
         if (start == null || temp == null) continue;
         final local = tz.TZDateTime.from(start.toUtc(), location);
-        if (local.isBefore(dayStart) || !local.isBefore(dayEnd)) continue;
         final hourStart = tz.TZDateTime(
           location,
           local.year,
@@ -255,6 +267,8 @@ class StationTemperatureApi {
           local.day,
           local.hour,
         );
+        // Include next-day local 00:00 (dayEnd) as the series endpoint.
+        if (hourStart.isBefore(dayStart) || hourStart.isAfter(dayEnd)) continue;
         final tempC = unit == 'F' ? fahrenheitToCelsius(temp) : temp;
         out[hourStart.millisecondsSinceEpoch] = tempC;
       }
@@ -307,7 +321,6 @@ class StationTemperatureApi {
               t.hour,
               t.minute,
             );
-      if (local.isBefore(dayStart) || !local.isBefore(dayEnd)) continue;
       final hourStart = tz.TZDateTime(
         location,
         local.year,
@@ -315,6 +328,8 @@ class StationTemperatureApi {
         local.day,
         local.hour,
       );
+      // Include next-day local 00:00 (dayEnd) as the series endpoint.
+      if (hourStart.isBefore(dayStart) || hourStart.isAfter(dayEnd)) continue;
       out[hourStart.millisecondsSinceEpoch] = temp;
     }
     return out;
@@ -346,7 +361,6 @@ Map<int, double> bucketMetarObservations({
   final candidates = <int, _ObsCandidate>{};
   for (final sample in samples) {
     final local = tz.TZDateTime.from(sample.utc.toUtc(), location);
-    if (local.isBefore(dayStart) || !local.isBefore(dayEnd)) continue;
     final hourStart = tz.TZDateTime(
       location,
       local.year,
@@ -354,6 +368,8 @@ Map<int, double> bucketMetarObservations({
       local.day,
       local.hour,
     );
+    // Include next-day local 00:00 (dayEnd) as the series endpoint.
+    if (hourStart.isBefore(dayStart) || hourStart.isAfter(dayEnd)) continue;
     final key = hourStart.millisecondsSinceEpoch;
     final score = metarHourScore(local.minute);
     final existing = candidates[key];
@@ -372,6 +388,8 @@ double convertTempC(double tempC, String unit) =>
     unit == 'F' ? celsiusToFahrenheit(tempC) : tempC;
 
 /// Pure merge used by API and unit tests.
+///
+/// Includes hours `[dayStart, dayEnd]` so next-day local 00:00 is plotted.
 List<HourlyTempPoint> mergeHourlySeries({
   required tz.TZDateTime dayStart,
   required tz.TZDateTime dayEnd,
@@ -382,7 +400,8 @@ List<HourlyTempPoint> mergeHourlySeries({
 }) {
   final points = <HourlyTempPoint>[];
   var hour = dayStart;
-  while (hour.isBefore(dayEnd)) {
+  // Inclusive of dayEnd (next local midnight).
+  while (!hour.isAfter(dayEnd)) {
     final key = hour.millisecondsSinceEpoch;
     final hourEnd = hour.add(const Duration(hours: 1));
     final obs = observedC[key];
@@ -425,5 +444,26 @@ List<HourlyTempPoint> mergeHourlySeries({
     }
     hour = hourEnd;
   }
-  return points;
+  return markDailyMinima(points, dayEnd);
+}
+
+/// Marks observation-day hours that tie the day's minimum temperature.
+///
+/// Next-day local midnight ([dayEnd]) is excluded from the minimum set.
+List<HourlyTempPoint> markDailyMinima(
+  List<HourlyTempPoint> points,
+  tz.TZDateTime dayEnd,
+) {
+  final dayPoints =
+      points.where((p) => p.localHourStart.isBefore(dayEnd)).toList();
+  if (dayPoints.isEmpty) return points;
+  final minTemp =
+      dayPoints.map((p) => p.temperature).reduce((a, b) => a < b ? a : b);
+  return [
+    for (final p in points)
+      p.copyWith(
+        isDailyMinimum: p.localHourStart.isBefore(dayEnd) &&
+            (p.temperature - minTemp).abs() < 1e-9,
+      ),
+  ];
 }

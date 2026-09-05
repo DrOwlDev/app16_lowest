@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -69,7 +71,8 @@ class DailyTemperatureChart extends StatelessWidget {
             maxX: dayEndMs,
             minY: minY,
             maxY: maxY,
-            clipData: const FlClipData.all(),
+            // Avoid clipping the next-day 00:00 endpoint / min stars at the right edge.
+            clipData: const FlClipData.none(),
             gridData: FlGridData(
               show: true,
               drawVerticalLine: true,
@@ -173,9 +176,16 @@ class DailyTemperatureChart extends StatelessWidget {
                       series.dayStart.location,
                       spot.x.round(),
                     );
+                    final isMin = points.any(
+                      (p) =>
+                          p.isDailyMinimum &&
+                          p.localHourStart.millisecondsSinceEpoch ==
+                              spot.x.round(),
+                    );
+                    final minTag = isMin ? ' · min' : '';
                     return LineTooltipItem(
                       '${hourFmt.format(local)}\n'
-                      '${spot.y.toStringAsFixed(1)}$unitSuffix',
+                      '${spot.y.toStringAsFixed(1)}$unitSuffix$minTag',
                       const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -196,8 +206,15 @@ class DailyTemperatureChart extends StatelessWidget {
                 dotData: FlDotData(
                   show: true,
                   getDotPainter: (spot, percent, bar, index) {
-                    final kind = points[index].kind;
-                    final filled = kind == TempPointKind.observed;
+                    final point = points[index];
+                    if (point.isDailyMinimum) {
+                      return const _FlDotStarPainter(
+                        color: Color(0xFFFACC15),
+                        strokeColor: Color(0xFFCA8A04),
+                        size: 12,
+                      );
+                    }
+                    final filled = point.kind == TempPointKind.observed;
                     return FlDotCirclePainter(
                       radius: 2.5,
                       color: filled
@@ -223,4 +240,66 @@ class DailyTemperatureChart extends StatelessWidget {
     if (range <= 20) return 5;
     return 10;
   }
+}
+
+/// Yellow star marker for daily minimum temperature hours.
+class _FlDotStarPainter extends FlDotPainter {
+  const _FlDotStarPainter({
+    required this.color,
+    required this.strokeColor,
+    required this.size,
+  });
+
+  final Color color;
+  final Color strokeColor;
+  final double size;
+
+  @override
+  void draw(Canvas canvas, FlSpot spot, Offset offsetInCanvas) {
+    final path = _starPath(offsetInCanvas, size / 2);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = strokeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  static Path _starPath(Offset center, double radius) {
+    const points = 5;
+    final path = Path();
+    final inner = radius * 0.45;
+    for (var i = 0; i < points * 2; i++) {
+      final r = i.isEven ? radius : inner;
+      final angle = -math.pi / 2 + (i * math.pi / points);
+      final x = center.dx + r * math.cos(angle);
+      final y = center.dy + r * math.sin(angle);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    return path;
+  }
+
+  @override
+  Size getSize(FlSpot spot) => Size(size, size);
+
+  @override
+  Color get mainColor => color;
+
+  @override
+  List<Object?> get props => [color, strokeColor, size];
+
+  @override
+  FlDotPainter lerp(FlDotPainter a, FlDotPainter b, double t) => this;
 }
