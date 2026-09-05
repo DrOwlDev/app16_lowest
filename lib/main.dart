@@ -10,6 +10,8 @@ import 'pages/markets_page.dart';
 import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
 import 'services/polymarket_api.dart';
+import 'services/station_temperature_api.dart';
+import 'widgets/daily_temperature_chart.dart';
 
 void main() {
   CityTimezones.ensureInitialized();
@@ -715,15 +717,34 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   bool _loadingPrices = false;
   bool _pricesLoaded = false;
 
+  final StationTemperatureApi _tempApi = StationTemperatureApi();
+  bool _loadingTemp = false;
+  bool _tempLoaded = false;
+  DailyTemperatureSeries? _tempSeries;
+  String? _tempError;
+
+  String? get _timeseriesSiteId =>
+      weatherGovTimeseriesSiteId(widget.event.resolutionSourceOpenUrl) ??
+      weatherGovTimeseriesSiteId(widget.event.resolutionSourceUrl);
+
   @override
   void initState() {
     super.initState();
     _markets = widget.event.markets;
     if (widget.expanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _loadBuyPrices();
+        if (mounted) {
+          _loadBuyPrices();
+          _loadTemperatureSeries();
+        }
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _tempApi.close();
+    super.dispose();
   }
 
   @override
@@ -737,8 +758,10 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       _markets = widget.event.markets;
       _pricesLoaded = false;
       _loadingPrices = false;
+      _resetTemperatureState();
       if (widget.expanded) {
         _loadBuyPrices(force: true);
+        _loadTemperatureSeries(force: true);
       }
       return;
     }
@@ -746,14 +769,24 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     if (refreshed) {
       _markets = widget.event.markets;
       _pricesLoaded = false;
+      _tempLoaded = false;
       if (widget.expanded) {
         _loadBuyPrices(force: true);
+        _loadTemperatureSeries(force: true);
       }
     }
 
     if (!oldWidget.expanded && widget.expanded) {
       _loadBuyPrices();
+      _loadTemperatureSeries();
     }
+  }
+
+  void _resetTemperatureState() {
+    _loadingTemp = false;
+    _tempLoaded = false;
+    _tempSeries = null;
+    _tempError = null;
   }
 
   Future<void> _loadBuyPrices({bool force = false}) async {
@@ -773,6 +806,50 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       setState(() {
         _markets = widget.event.markets;
         _loadingPrices = false;
+      });
+    }
+  }
+
+  Future<void> _loadTemperatureSeries({bool force = false}) async {
+    final siteId = _timeseriesSiteId;
+    if (siteId == null) return;
+    if (_loadingTemp) return;
+    if (_tempLoaded && !force) return;
+
+    final day = widget.event.observationDayInCity;
+    if (day == null) {
+      setState(() {
+        _tempError = 'No observation day';
+        _tempLoaded = true;
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingTemp = true;
+      _tempError = null;
+    });
+    try {
+      final series = await _tempApi.fetchDailySeries(
+        siteId: siteId,
+        cityName: widget.event.cityName,
+        year: day.year,
+        month: day.month,
+        day: day.day,
+        unit: widget.event.temperatureUnit ?? 'C',
+      );
+      if (!mounted) return;
+      setState(() {
+        _tempSeries = series;
+        _tempLoaded = true;
+        _loadingTemp = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _tempError = 'Temperature chart unavailable';
+        _tempLoaded = true;
+        _loadingTemp = false;
       });
     }
   }
@@ -810,7 +887,10 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                 childrenPadding: EdgeInsets.zero,
                 onExpansionChanged: (expanded) {
                   widget.onExpansionChanged(expanded);
-                  if (expanded) _loadBuyPrices();
+                  if (expanded) {
+                    _loadBuyPrices();
+                    _loadTemperatureSeries();
+                  }
                 },
                 title: Text(
                   event.title,
@@ -887,6 +967,36 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                           market: market,
                           volumeFormat: widget.volumeFormat,
                         )),
+                  if (_timeseriesSiteId != null) ...[
+                    const Divider(height: 1),
+                    ColoredBox(
+                      color: Colors.white,
+                      child: _loadingTemp
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 12,
+                              ),
+                              child: LinearProgressIndicator(minHeight: 2),
+                            )
+                          : _tempError != null
+                              ? Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Text(
+                                    _tempError!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                )
+                              : _tempSeries != null
+                                  ? DailyTemperatureChart(
+                                      series: _tempSeries!,
+                                    )
+                                  : const SizedBox.shrink(),
+                    ),
+                  ],
                 ],
               ),
             ),

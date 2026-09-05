@@ -1,0 +1,181 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+
+import 'package:app16_lowest/models/market_event.dart';
+import 'package:app16_lowest/services/station_temperature_api.dart';
+
+void main() {
+  setUpAll(() {
+    tzdata.initializeTimeZones();
+  });
+
+  group('temperature conversion', () {
+    test('celsius to fahrenheit', () {
+      expect(celsiusToFahrenheit(0), 32);
+      expect(celsiusToFahrenheit(10), 50);
+      expect(convertTempC(0, 'C'), 0);
+      expect(convertTempC(0, 'F'), 32);
+    });
+
+    test('fahrenheit to celsius', () {
+      expect(fahrenheitToCelsius(32), 0);
+      expect(fahrenheitToCelsius(50), closeTo(10, 1e-9));
+    });
+  });
+
+  group('mergeHourlySeries now-split', () {
+    late tz.Location seattle;
+    late tz.TZDateTime dayStart;
+    late tz.TZDateTime dayEnd;
+
+    setUp(() {
+      seattle = tz.getLocation('America/Los_Angeles');
+      dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
+      dayEnd = dayStart.add(const Duration(days: 1));
+    });
+
+    Map<int, double> hourMap(Map<int, double> byHourOfDay) {
+      return {
+        for (final e in byHourOfDay.entries)
+          tz.TZDateTime(seattle, 2026, 3, 20, e.key).millisecondsSinceEpoch:
+              e.value,
+      };
+    }
+
+    test('past hours use observed only; future use forecast only', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 14, 30);
+      final observed = hourMap({10: 5, 11: 6, 14: 7});
+      final forecast = hourMap({14: 99, 15: 8, 16: 9});
+
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: observed,
+        forecastC: forecast,
+        unit: 'C',
+      );
+
+      final byHour = {
+        for (final p in points) p.localHourStart.hour: p,
+      };
+
+      expect(byHour[10]?.temperature, 5);
+      expect(byHour[10]?.kind, TempPointKind.observed);
+      expect(byHour[11]?.kind, TempPointKind.observed);
+      // Hour containing now prefers observed over forecast.
+      expect(byHour[14]?.temperature, 7);
+      expect(byHour[14]?.kind, TempPointKind.observed);
+      expect(byHour[15]?.temperature, 8);
+      expect(byHour[15]?.kind, TempPointKind.forecast);
+      expect(byHour.containsKey(12), isFalse); // no obs in past → skip
+    });
+
+    test('current hour falls back to forecast when no observation', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 14, 10);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({10: 5}),
+        forecastC: hourMap({14: 12}),
+        unit: 'C',
+      );
+      final cur = points.singleWhere((p) => p.localHourStart.hour == 14);
+      expect(cur.temperature, 12);
+      expect(cur.kind, TempPointKind.forecast);
+    });
+
+    test('converts series to Fahrenheit when unit is F', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 18);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({10: 0}),
+        forecastC: hourMap({20: 10}),
+        unit: 'F',
+      );
+      expect(points.map((p) => p.temperature).toList(), [32.0, 50.0]);
+    });
+
+    test('fully past day uses only observations', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 21, 1);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({0: 1, 12: 2}),
+        forecastC: hourMap({0: 99, 12: 99, 23: 99}),
+        unit: 'C',
+      );
+      expect(points.length, 2);
+      expect(points.every((p) => p.kind == TempPointKind.observed), isTrue);
+      expect(points.map((p) => p.temperature).toList(), [1.0, 2.0]);
+    });
+  });
+
+  group('chart eligibility smoke', () {
+    test('timeseries site id present for WRH URLs', () {
+      expect(
+        weatherGovTimeseriesSiteId(
+          'https://www.weather.gov/wrh/timeseries?site=ksea',
+        ),
+        'ksea',
+      );
+    });
+
+    test('unique resolution source has no timeseries site', () {
+      expect(
+        weatherGovTimeseriesSiteId('https://example.com/unique'),
+        isNull,
+      );
+      expect(
+        weatherGovTimeseriesSiteId(null),
+        isNull,
+      );
+    });
+  });
+
+  group('METAR hour bucketing', () {
+    test('prefers :53 over :20 in the same local hour', () {
+      final seattle = tz.getLocation('America/Los_Angeles');
+      final dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      // 15:20 and 15:53 PDT = UTC 22:20 and 22:53 on Mar 20 (PDT = UTC-7).
+      final bucketed = bucketMetarObservations(
+        location: seattle,
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        samples: [
+          (utc: DateTime.utc(2026, 3, 20, 22, 20), tempC: 11),
+          (utc: DateTime.utc(2026, 3, 20, 22, 53), tempC: 10),
+        ],
+      );
+      final key =
+          tz.TZDateTime(seattle, 2026, 3, 20, 15).millisecondsSinceEpoch;
+      expect(bucketed[key], 10);
+      expect(metarHourScore(53) > metarHourScore(20), isTrue);
+      expect(metarHourScore(55) > metarHourScore(5), isTrue);
+    });
+
+    test('merge keeps single bucketed observed value per hour', () {
+      final seattle = tz.getLocation('America/Los_Angeles');
+      final dayStart = tz.TZDateTime(seattle, 2026, 3, 20);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 12);
+      final key = tz.TZDateTime(seattle, 2026, 3, 20, 8).millisecondsSinceEpoch;
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: {key: 4.5},
+        forecastC: {},
+        unit: 'C',
+      );
+      expect(points.single.temperature, 4.5);
+      expect(points.single.localHourStart.hour, 8);
+    });
+  });
+}
