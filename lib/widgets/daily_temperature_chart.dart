@@ -73,227 +73,247 @@ class DailyTemperatureChart extends StatelessWidget {
       if (p.isDailyMaximum) dailyMaxTemp ??= p.temperature;
     }
 
-    return SizedBox(
-      height: height,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 12, 4),
-        child: LineChart(
-          LineChartData(
-            minX: dayMs,
-            maxX: dayEndMs,
-            minY: minY,
-            maxY: maxY,
-            // Avoid clipping the next-day 00:00 endpoint / extreme stars at the right edge.
-            clipData: const FlClipData.none(),
-            gridData: FlGridData(
-              show: true,
-              drawVerticalLine: true,
-              horizontalInterval: _niceInterval(maxY - minY),
-              getDrawingHorizontalLine: (v) => FlLine(
-                color: Colors.grey.shade300,
-                strokeWidth: 1,
-              ),
-              getDrawingVerticalLine: (v) => FlLine(
-                color: Colors.grey.shade200,
-                strokeWidth: 1,
-              ),
-            ),
-            borderData: FlBorderData(
-              show: true,
-              border: Border.all(color: Colors.grey.shade400, width: 1),
-            ),
-            extraLinesData: ExtraLinesData(
-              horizontalLines: [
-                if (dailyMinTemp != null)
-                  HorizontalLine(
-                    y: dailyMinTemp,
-                    color: minColor,
-                    strokeWidth: 1.5,
-                    dashArray: const [6, 4],
-                    label: HorizontalLineLabel(
-                      show: true,
-                      alignment: Alignment.topLeft,
-                      padding: const EdgeInsets.only(left: 4, bottom: 2),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: minStroke,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      labelResolver: (line) =>
-                          'min ${line.y.toStringAsFixed(0)}$unitSuffix',
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: height,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: LineChart(
+                LineChartData(
+                  minX: dayMs,
+                  maxX: dayEndMs,
+                  minY: minY,
+                  maxY: maxY,
+                  // Avoid clipping the next-day 00:00 endpoint / extreme stars at the right edge.
+                  clipData: const FlClipData.none(),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: _niceInterval(maxY - minY),
+                    getDrawingHorizontalLine: (v) => FlLine(
+                      color: Colors.grey.shade300,
+                      strokeWidth: 1,
+                    ),
+                    getDrawingVerticalLine: (v) => FlLine(
+                      color: Colors.grey.shade200,
+                      strokeWidth: 1,
                     ),
                   ),
-                if (dailyMaxTemp != null)
-                  HorizontalLine(
-                    y: dailyMaxTemp,
-                    color: maxColor,
-                    strokeWidth: 1.5,
-                    dashArray: const [6, 4],
-                    label: HorizontalLineLabel(
-                      show: true,
-                      alignment: Alignment.topLeft,
-                      padding: const EdgeInsets.only(left: 4, bottom: 2),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: maxStroke,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      labelResolver: (line) =>
-                          'max ${line.y.toStringAsFixed(0)}$unitSuffix',
-                    ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: Colors.grey.shade400, width: 1),
                   ),
-              ],
-              verticalLines: [
-                if (nowMs > dayMs && nowMs < dayEndMs)
-                  VerticalLine(
-                    x: nowMs,
-                    color: nowColor,
-                    strokeWidth: 1.5,
-                    dashArray: const [5, 4],
-                    label: VerticalLineLabel(
-                      show: true,
-                      alignment: Alignment.topRight,
-                      padding: const EdgeInsets.only(left: 4, top: 2),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: nowColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      labelResolver: (_) => 'now',
-                    ),
-                  ),
-              ],
-            ),
-            titlesData: FlTitlesData(
-              topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 36,
-                  interval: _niceInterval(maxY - minY),
-                  getTitlesWidget: (value, meta) {
-                    if (value == meta.min || value == meta.max) {
-                      return const SizedBox.shrink();
-                    }
-                    return Text(
-                      '${value.toStringAsFixed(0)}$unitSuffix',
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Colors.grey.shade700,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 22,
-                  interval: const Duration(hours: 3).inMilliseconds.toDouble(),
-                  getTitlesWidget: (value, meta) {
-                    final local = tz.TZDateTime.fromMillisecondsSinceEpoch(
-                      series.dayStart.location,
-                      value.round(),
-                    );
-                    final label = local.hour == 0 &&
-                            local.millisecondsSinceEpoch !=
-                                series.dayStart.millisecondsSinceEpoch
-                        ? dayFmt.format(local)
-                        : hourFmt.format(local);
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.grey.shade700,
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      if (dailyMinTemp != null)
+                        HorizontalLine(
+                          y: dailyMinTemp,
+                          color: minColor,
+                          strokeWidth: 1.5,
+                          dashArray: const [6, 4],
+                          label: HorizontalLineLabel(
+                            show: true,
+                            alignment: Alignment.topLeft,
+                            padding: const EdgeInsets.only(left: 4, bottom: 2),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: minStroke,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            labelResolver: (line) =>
+                                'min ${line.y.toStringAsFixed(0)}$unitSuffix',
+                          ),
                         ),
+                      if (dailyMaxTemp != null)
+                        HorizontalLine(
+                          y: dailyMaxTemp,
+                          color: maxColor,
+                          strokeWidth: 1.5,
+                          dashArray: const [6, 4],
+                          label: HorizontalLineLabel(
+                            show: true,
+                            alignment: Alignment.topLeft,
+                            padding: const EdgeInsets.only(left: 4, bottom: 2),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: maxStroke,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            labelResolver: (line) =>
+                                'max ${line.y.toStringAsFixed(0)}$unitSuffix',
+                          ),
+                        ),
+                    ],
+                    verticalLines: [
+                      if (nowMs > dayMs && nowMs < dayEndMs)
+                        VerticalLine(
+                          x: nowMs,
+                          color: nowColor,
+                          strokeWidth: 1.5,
+                          dashArray: const [5, 4],
+                          label: VerticalLineLabel(
+                            show: true,
+                            alignment: Alignment.topRight,
+                            padding: const EdgeInsets.only(left: 4, top: 2),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: nowColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            labelResolver: (_) => 'now',
+                          ),
+                        ),
+                    ],
+                  ),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 36,
+                        interval: _niceInterval(maxY - minY),
+                        getTitlesWidget: (value, meta) {
+                          if (value == meta.min || value == meta.max) {
+                            return const SizedBox.shrink();
+                          }
+                          return Text(
+                            '${value.toStringAsFixed(0)}$unitSuffix',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade700,
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 22,
+                        interval:
+                            const Duration(hours: 3).inMilliseconds.toDouble(),
+                        getTitlesWidget: (value, meta) {
+                          final local =
+                              tz.TZDateTime.fromMillisecondsSinceEpoch(
+                            series.dayStart.location,
+                            value.round(),
+                          );
+                          final label = local.hour == 0 &&
+                                  local.millisecondsSinceEpoch !=
+                                      series.dayStart.millisecondsSinceEpoch
+                              ? dayFmt.format(local)
+                              : hourFmt.format(local);
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touched) {
+                        return touched.map((spot) {
+                          final local =
+                              tz.TZDateTime.fromMillisecondsSinceEpoch(
+                            series.dayStart.location,
+                            spot.x.round(),
+                          );
+                          HourlyTempPoint? point;
+                          for (final p in points) {
+                            if (p.localHourStart.millisecondsSinceEpoch ==
+                                spot.x.round()) {
+                              point = p;
+                              break;
+                            }
+                          }
+                          final tags = <String>[
+                            if (point?.isDailyMinimum == true) 'min',
+                            if (point?.isDailyMaximum == true) 'max',
+                          ];
+                          final tagSuffix =
+                              tags.isEmpty ? '' : ' · ${tags.join('/')}';
+                          final tempUnit = series.unit == 'F' ? 'F' : 'C';
+                          return LineTooltipItem(
+                            '${_formatPointDateTime(local, hourFmt)} '
+                            '${spot.y.toStringAsFixed(1)}$tempUnit$tagSuffix',
+                            const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: false,
+                      color: lineColor,
+                      barWidth: 2,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, bar, index) {
+                          final point = points[index];
+                          if (point.isDailyMaximum) {
+                            return const _FlDotStarPainter(
+                              color: maxColor,
+                              strokeColor: maxStroke,
+                              size: 12,
+                            );
+                          }
+                          if (point.isDailyMinimum) {
+                            return const _FlDotStarPainter(
+                              color: minColor,
+                              strokeColor: minStroke,
+                              size: 12,
+                            );
+                          }
+                          final filled = point.kind == TempPointKind.observed;
+                          return FlDotCirclePainter(
+                            radius: 2.5,
+                            color: filled ? lineColor : Colors.white,
+                            strokeWidth: 1.5,
+                            strokeColor: lineColor,
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(show: false),
+                    ),
+                  ],
                 ),
               ),
             ),
-            lineTouchData: LineTouchData(
-              enabled: true,
-              touchTooltipData: LineTouchTooltipData(
-                getTooltipItems: (touched) {
-                  return touched.map((spot) {
-                    final local = tz.TZDateTime.fromMillisecondsSinceEpoch(
-                      series.dayStart.location,
-                      spot.x.round(),
-                    );
-                    HourlyTempPoint? point;
-                    for (final p in points) {
-                      if (p.localHourStart.millisecondsSinceEpoch ==
-                          spot.x.round()) {
-                        point = p;
-                        break;
-                      }
-                    }
-                    final tags = <String>[
-                      if (point?.isDailyMinimum == true) 'min',
-                      if (point?.isDailyMaximum == true) 'max',
-                    ];
-                    final tagSuffix =
-                        tags.isEmpty ? '' : ' · ${tags.join('/')}';
-                    return LineTooltipItem(
-                      '${hourFmt.format(local)}\n'
-                      '${spot.y.toStringAsFixed(1)}$unitSuffix$tagSuffix',
-                      const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    );
-                  }).toList();
-                },
-              ),
-            ),
-            lineBarsData: [
-              LineChartBarData(
-                spots: spots,
-                isCurved: false,
-                color: lineColor,
-                barWidth: 2,
-                isStrokeCapRound: true,
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter: (spot, percent, bar, index) {
-                    final point = points[index];
-                    if (point.isDailyMaximum) {
-                      return const _FlDotStarPainter(
-                        color: maxColor,
-                        strokeColor: maxStroke,
-                        size: 12,
-                      );
-                    }
-                    if (point.isDailyMinimum) {
-                      return const _FlDotStarPainter(
-                        color: minColor,
-                        strokeColor: minStroke,
-                        size: 12,
-                      );
-                    }
-                    final filled = point.kind == TempPointKind.observed;
-                    return FlDotCirclePainter(
-                      radius: 2.5,
-                      color: filled ? lineColor : Colors.white,
-                      strokeWidth: 1.5,
-                      strokeColor: lineColor,
-                    );
-                  },
-                ),
-                belowBarData: BarAreaData(show: false),
-              ),
-            ],
           ),
-        ),
+          const SizedBox(height: 8),
+          _TemperaturePointsTable(
+            points: points,
+            unit: series.unit == 'F' ? 'F' : 'C',
+            hourFmt: hourFmt,
+            minColor: minColor,
+            maxColor: maxColor,
+          ),
+        ],
       ),
     );
   }
@@ -303,6 +323,134 @@ class DailyTemperatureChart extends StatelessWidget {
     if (range <= 10) return 2;
     if (range <= 20) return 5;
     return 10;
+  }
+
+  static String _ordinalDay(int day) {
+    if (day >= 11 && day <= 13) return '${day}th';
+    return switch (day % 10) {
+      1 => '${day}st',
+      2 => '${day}nd',
+      3 => '${day}rd',
+      _ => '${day}th',
+    };
+  }
+
+  static String _formatPointDateTime(tz.TZDateTime local, DateFormat hourFmt) {
+    return '${_ordinalDay(local.day)} ${DateFormat('MMM yyyy').format(local)} '
+        '${hourFmt.format(local)}';
+  }
+}
+
+class _TemperaturePointsTable extends StatelessWidget {
+  const _TemperaturePointsTable({
+    required this.points,
+    required this.unit,
+    required this.hourFmt,
+    required this.minColor,
+    required this.maxColor,
+  });
+
+  final List<HourlyTempPoint> points;
+  final String unit;
+  final DateFormat hourFmt;
+  final Color minColor;
+  final Color maxColor;
+
+  @override
+  Widget build(BuildContext context) {
+    const headerStyle = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF334155),
+    );
+    const cellStyle = TextStyle(
+      fontSize: 11,
+      color: Color(0xFF0F172A),
+    );
+
+    Widget header(String text, {TextAlign align = TextAlign.left}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Text(text, style: headerStyle, textAlign: align),
+      );
+    }
+
+    Widget cell(String text, {TextStyle? style, TextAlign align = TextAlign.left}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        child: Text(text, style: style ?? cellStyle, textAlign: align),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Table(
+        columnWidths: const {
+          0: FlexColumnWidth(2.4),
+          1: FlexColumnWidth(1.0),
+          2: FlexColumnWidth(1.2),
+          3: FlexColumnWidth(1.0),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: [
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+            children: [
+              header('Date / time'),
+              header('Temp', align: TextAlign.right),
+              header('Source'),
+              header('Extreme'),
+            ],
+          ),
+          for (var i = 0; i < points.length; i++)
+            TableRow(
+              decoration: BoxDecoration(
+                color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
+              ),
+              children: [
+                cell(
+                  DailyTemperatureChart._formatPointDateTime(
+                    points[i].localHourStart,
+                    hourFmt,
+                  ),
+                ),
+                cell(
+                  '${points[i].temperature.toStringAsFixed(1)}$unit',
+                  align: TextAlign.right,
+                ),
+                cell(
+                  points[i].kind == TempPointKind.observed
+                      ? 'Observed'
+                      : 'Forecast',
+                ),
+                cell(
+                  points[i].isDailyMaximum
+                      ? 'Max'
+                      : points[i].isDailyMinimum
+                          ? 'Min'
+                          : '—',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: (points[i].isDailyMinimum ||
+                            points[i].isDailyMaximum)
+                        ? FontWeight.w700
+                        : FontWeight.w400,
+                    color: points[i].isDailyMaximum
+                        ? maxColor
+                        : points[i].isDailyMinimum
+                            ? minColor
+                            : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 }
 
