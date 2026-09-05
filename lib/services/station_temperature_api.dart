@@ -14,6 +14,7 @@ class HourlyTempPoint {
     required this.temperature,
     required this.kind,
     this.isDailyMinimum = false,
+    this.isDailyMaximum = false,
   });
 
   /// City-local hour start (timezone-aware).
@@ -24,12 +25,19 @@ class HourlyTempPoint {
   /// True when this hour ties the observation-day minimum temperature.
   final bool isDailyMinimum;
 
-  HourlyTempPoint copyWith({bool? isDailyMinimum}) {
+  /// True when this hour ties the observation-day maximum temperature.
+  final bool isDailyMaximum;
+
+  HourlyTempPoint copyWith({
+    bool? isDailyMinimum,
+    bool? isDailyMaximum,
+  }) {
     return HourlyTempPoint(
       localHourStart: localHourStart,
       temperature: temperature,
       kind: kind,
       isDailyMinimum: isDailyMinimum ?? this.isDailyMinimum,
+      isDailyMaximum: isDailyMaximum ?? this.isDailyMaximum,
     );
   }
 }
@@ -444,13 +452,13 @@ List<HourlyTempPoint> mergeHourlySeries({
     }
     hour = hourEnd;
   }
-  return markDailyMinima(points, dayEnd);
+  return markDailyExtremes(points, dayEnd);
 }
 
-/// Marks observation-day hours that tie the day's minimum temperature.
+/// Marks observation-day hours that tie the day's min/max temperature.
 ///
-/// Next-day local midnight ([dayEnd]) is excluded from the minimum set.
-List<HourlyTempPoint> markDailyMinima(
+/// Next-day local midnight ([dayEnd]) is excluded from the extreme set.
+List<HourlyTempPoint> markDailyExtremes(
   List<HourlyTempPoint> points,
   tz.TZDateTime dayEnd,
 ) {
@@ -459,11 +467,15 @@ List<HourlyTempPoint> markDailyMinima(
   if (dayPoints.isEmpty) return points;
   final minTemp =
       dayPoints.map((p) => p.temperature).reduce((a, b) => a < b ? a : b);
+  final maxTemp =
+      dayPoints.map((p) => p.temperature).reduce((a, b) => a > b ? a : b);
   return [
     for (final p in points)
       p.copyWith(
         isDailyMinimum: p.localHourStart.isBefore(dayEnd) &&
             (p.temperature - minTemp).abs() < 1e-9,
+        isDailyMaximum: p.localHourStart.isBefore(dayEnd) &&
+            (p.temperature - maxTemp).abs() < 1e-9,
       ),
   ];
 }

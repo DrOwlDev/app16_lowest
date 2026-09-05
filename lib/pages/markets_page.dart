@@ -258,7 +258,7 @@ class _MarketsPageState extends State<MarketsPage>
                 ],
                 if (!isStandardTimeseries) ...[
                   const SizedBox(width: 6),
-                  const _UniqueSourceBadge(),
+                  const UniqueSourceBadge(),
                 ],
               ],
             ),
@@ -343,8 +343,8 @@ class _UnitBadge extends StatelessWidget {
   }
 }
 
-class _UniqueSourceBadge extends StatelessWidget {
-  const _UniqueSourceBadge();
+class UniqueSourceBadge extends StatelessWidget {
+  const UniqueSourceBadge({super.key});
 
   @override
   Widget build(BuildContext context) {

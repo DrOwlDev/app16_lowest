@@ -61,12 +61,16 @@ class DailyTemperatureChart extends StatelessWidget {
     final hourFmt = DateFormat('HH:mm');
     final dayFmt = DateFormat('MMM d');
     const lineColor = Color(0xFF111827);
+    const minColor = Color(0xFF2563EB);
+    const minStroke = Color(0xFF1D4ED8);
+    const maxColor = Color(0xFFEA580C);
+    const maxStroke = Color(0xFFC2410C);
+    const nowColor = Color(0xFFDC2626);
     double? dailyMinTemp;
+    double? dailyMaxTemp;
     for (final p in points) {
-      if (p.isDailyMinimum) {
-        dailyMinTemp = p.temperature;
-        break;
-      }
+      if (p.isDailyMinimum) dailyMinTemp ??= p.temperature;
+      if (p.isDailyMaximum) dailyMaxTemp ??= p.temperature;
     }
 
     return SizedBox(
@@ -79,7 +83,7 @@ class DailyTemperatureChart extends StatelessWidget {
             maxX: dayEndMs,
             minY: minY,
             maxY: maxY,
-            // Avoid clipping the next-day 00:00 endpoint / min stars at the right edge.
+            // Avoid clipping the next-day 00:00 endpoint / extreme stars at the right edge.
             clipData: const FlClipData.none(),
             gridData: FlGridData(
               show: true,
@@ -103,7 +107,7 @@ class DailyTemperatureChart extends StatelessWidget {
                 if (dailyMinTemp != null)
                   HorizontalLine(
                     y: dailyMinTemp,
-                    color: const Color(0xFFFACC15),
+                    color: minColor,
                     strokeWidth: 1.5,
                     dashArray: const [6, 4],
                     label: HorizontalLineLabel(
@@ -112,11 +116,30 @@ class DailyTemperatureChart extends StatelessWidget {
                       padding: const EdgeInsets.only(left: 4, bottom: 2),
                       style: const TextStyle(
                         fontSize: 10,
-                        color: Color(0xFFCA8A04),
+                        color: minStroke,
                         fontWeight: FontWeight.w600,
                       ),
                       labelResolver: (line) =>
                           'min ${line.y.toStringAsFixed(0)}$unitSuffix',
+                    ),
+                  ),
+                if (dailyMaxTemp != null)
+                  HorizontalLine(
+                    y: dailyMaxTemp,
+                    color: maxColor,
+                    strokeWidth: 1.5,
+                    dashArray: const [6, 4],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topLeft,
+                      padding: const EdgeInsets.only(left: 4, bottom: 2),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: maxStroke,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      labelResolver: (line) =>
+                          'max ${line.y.toStringAsFixed(0)}$unitSuffix',
                     ),
                   ),
               ],
@@ -124,16 +147,16 @@ class DailyTemperatureChart extends StatelessWidget {
                 if (nowMs > dayMs && nowMs < dayEndMs)
                   VerticalLine(
                     x: nowMs,
-                    color: Colors.grey.shade600,
+                    color: nowColor,
                     strokeWidth: 1.5,
                     dashArray: const [5, 4],
                     label: VerticalLineLabel(
                       show: true,
                       alignment: Alignment.topRight,
                       padding: const EdgeInsets.only(left: 4, top: 2),
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 10,
-                        color: Colors.grey.shade700,
+                        color: nowColor,
                         fontWeight: FontWeight.w600,
                       ),
                       labelResolver: (_) => 'now',
@@ -205,16 +228,23 @@ class DailyTemperatureChart extends StatelessWidget {
                       series.dayStart.location,
                       spot.x.round(),
                     );
-                    final isMin = points.any(
-                      (p) =>
-                          p.isDailyMinimum &&
-                          p.localHourStart.millisecondsSinceEpoch ==
-                              spot.x.round(),
-                    );
-                    final minTag = isMin ? ' · min' : '';
+                    HourlyTempPoint? point;
+                    for (final p in points) {
+                      if (p.localHourStart.millisecondsSinceEpoch ==
+                          spot.x.round()) {
+                        point = p;
+                        break;
+                      }
+                    }
+                    final tags = <String>[
+                      if (point?.isDailyMinimum == true) 'min',
+                      if (point?.isDailyMaximum == true) 'max',
+                    ];
+                    final tagSuffix =
+                        tags.isEmpty ? '' : ' · ${tags.join('/')}';
                     return LineTooltipItem(
                       '${hourFmt.format(local)}\n'
-                      '${spot.y.toStringAsFixed(1)}$unitSuffix$minTag',
+                      '${spot.y.toStringAsFixed(1)}$unitSuffix$tagSuffix',
                       const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -236,10 +266,17 @@ class DailyTemperatureChart extends StatelessWidget {
                   show: true,
                   getDotPainter: (spot, percent, bar, index) {
                     final point = points[index];
+                    if (point.isDailyMaximum) {
+                      return const _FlDotStarPainter(
+                        color: maxColor,
+                        strokeColor: maxStroke,
+                        size: 12,
+                      );
+                    }
                     if (point.isDailyMinimum) {
                       return const _FlDotStarPainter(
-                        color: Color(0xFFFACC15),
-                        strokeColor: Color(0xFFCA8A04),
+                        color: minColor,
+                        strokeColor: minStroke,
                         size: 12,
                       );
                     }
@@ -269,7 +306,7 @@ class DailyTemperatureChart extends StatelessWidget {
   }
 }
 
-/// Yellow star marker for daily minimum temperature hours.
+/// Star marker for daily min/max temperature hours.
 class _FlDotStarPainter extends FlDotPainter {
   const _FlDotStarPainter({
     required this.color,

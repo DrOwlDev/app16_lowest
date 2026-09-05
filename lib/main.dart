@@ -606,6 +606,10 @@ class _MarketListPageState extends State<MarketListPage> {
               });
             },
             onOpen: () => _openUrl(event.polymarketUrl),
+            onOpenResolution: () {
+              final url = event.resolutionSourceOpenUrl;
+              if (url != null) _openUrl(url);
+            },
           );
         },
       ),
@@ -696,6 +700,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.hideThinOutcomes,
     required this.onExpansionChanged,
     required this.onOpen,
+    required this.onOpenResolution,
   });
 
   final MarketEvent event;
@@ -707,6 +712,7 @@ class _MarketEventTile extends StatefulWidget {
   final bool hideThinOutcomes;
   final ValueChanged<bool> onExpansionChanged;
   final VoidCallback onOpen;
+  final VoidCallback onOpenResolution;
 
   @override
   State<_MarketEventTile> createState() => _MarketEventTileState();
@@ -868,6 +874,8 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     final visible = widget.hideThinOutcomes
         ? _markets.where((m) => !m.isThinOutcomeRow).toList()
         : _markets;
+    final resolutionOpenUrl = event.resolutionSourceOpenUrl;
+    final isStandardTimeseries = _timeseriesSiteId != null;
 
     return Card(
       color: fill,
@@ -918,6 +926,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                         label: eodLabel,
                         color: _eodBadgeColor(remaining),
                       ),
+                      if (!isStandardTimeseries) const UniqueSourceBadge(),
                       ...top.map((m) {
                         final price = m.displayChance;
                         final label = m.displayLabel.replaceAll('°', '');
@@ -945,11 +954,27 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                     ],
                   ),
                 ),
-                trailing: IconButton(
-                  tooltip: 'Open on Polymarket',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: widget.onOpen,
-                  icon: Icon(Icons.open_in_new, size: 16, color: accent),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (resolutionOpenUrl != null)
+                      IconButton(
+                        tooltip: 'Open resolution source',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onOpenResolution,
+                        icon: Icon(
+                          Icons.cloud_outlined,
+                          size: 18,
+                          color: accent,
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: 'Open on Polymarket',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: widget.onOpen,
+                      icon: Icon(Icons.open_in_new, size: 16, color: accent),
+                    ),
+                  ],
                 ),
                 children: [
                   if (_loadingPrices)

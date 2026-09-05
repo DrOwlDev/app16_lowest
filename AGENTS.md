@@ -22,3 +22,5 @@
 - Current Positions loads the Polymarket Data API for the configured public proxy wallet `0x8cEF3c1B592953D61EEE2bC9375C5944A8926B6d`.
 - Markets tab lists unique cities A–Z with each city’s resolution-source URL (from Gamma `resolutionSource` or Rules/description); show °C/°F badges from outcome labels; for `weather.gov/wrh/timeseries` sources title as `City - siteId` (e.g. `Guangzhou - zggg`); otherwise show a red "Unique Resolution Source" badge.
 - Opening weather.gov WRH timeseries links for °C markets appends `&units=metric`; °F markets leave the URL unchanged.
+- Expanded Low Markets rows show an hourly temperature chart only for `weather.gov/wrh/timeseries` resolution sites: observed temps before now, forecast after, city-local from 00:00 through next-day 00:00 inclusive.
+- Hourly chart styling: black temperature line; blue minimum horizontal line and stars; orange maximum horizontal line and stars; red vertical line at current time.

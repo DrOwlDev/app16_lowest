@@ -160,6 +160,10 @@ void main() {
             .isDailyMinimum,
         isFalse,
       );
+      final maxes = points.where((p) => p.isDailyMaximum).toList();
+      expect(maxes.length, 1);
+      expect(maxes.single.temperature, 15);
+      expect(maxes.single.isDailyMinimum, isFalse);
     });
   });
 
