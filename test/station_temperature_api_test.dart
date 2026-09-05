@@ -205,6 +205,10 @@ void main() {
         dayEnd: dayEnd,
         nowLocal: now,
         points: points,
+        latestObservation: LatestStationObservation(
+          temperature: 7.2,
+          observedAtLocal: tz.TZDateTime(seattle, 2026, 3, 20, 14, 20),
+        ),
       );
       final restored = DailyTemperatureSeries.fromJson(series.toJson());
       expect(restored.siteId, 'KSEA');
@@ -221,6 +225,9 @@ void main() {
         restored.nowLocal.millisecondsSinceEpoch,
         now.millisecondsSinceEpoch,
       );
+      expect(restored.latestObservation?.temperature, 7.2);
+      expect(restored.latestObservation?.observedAtLocal.hour, 14);
+      expect(restored.latestObservation?.observedAtLocal.minute, 20);
     });
   });
 

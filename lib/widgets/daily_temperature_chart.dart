@@ -13,10 +13,15 @@ class DailyTemperatureChart extends StatelessWidget {
     super.key,
     required this.series,
     this.height = 180,
+    this.hideNonExtremeTempRows = true,
   });
 
   final DailyTemperatureSeries series;
   final double height;
+
+  /// When true, the points table keeps Min/Max extremes and all forecast rows
+  /// (hides non-extreme observed rows only). Chart points are unchanged.
+  final bool hideNonExtremeTempRows;
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +184,11 @@ class DailyTemperatureChart extends StatelessWidget {
                               color: nowColor,
                               fontWeight: FontWeight.w600,
                             ),
-                            labelResolver: (_) => 'now',
+                            labelResolver: (_) => _nowLineLabel(
+                              series: series,
+                              hourFmt: hourFmt,
+                              unitSuffix: unitSuffix,
+                            ),
                           ),
                         ),
                     ],
@@ -383,6 +392,7 @@ class DailyTemperatureChart extends StatelessWidget {
             hourFmt: hourFmt,
             minColor: minColor,
             maxColor: maxColor,
+            hideNonExtremeTempRows: hideNonExtremeTempRows,
           ),
         ],
       ),
@@ -410,6 +420,19 @@ class DailyTemperatureChart extends StatelessWidget {
     return '${_ordinalDay(local.day)} ${DateFormat('MMM yyyy').format(local)} '
         '${hourFmt.format(local)}';
   }
+
+  /// Label for the red "now" line: latest NWS obs temp + observation time.
+  static String _nowLineLabel({
+    required DailyTemperatureSeries series,
+    required DateFormat hourFmt,
+    required String unitSuffix,
+  }) {
+    final latest = series.latestObservation;
+    if (latest == null) return 'now';
+    final temp = latest.temperature.toStringAsFixed(1);
+    final time = hourFmt.format(latest.observedAtLocal);
+    return '$temp$unitSuffix @ $time';
+  }
 }
 
 class _TemperaturePointsTable extends StatelessWidget {
@@ -419,6 +442,7 @@ class _TemperaturePointsTable extends StatelessWidget {
     required this.hourFmt,
     required this.minColor,
     required this.maxColor,
+    required this.hideNonExtremeTempRows,
   });
 
   final List<HourlyTempPoint> points;
@@ -426,9 +450,20 @@ class _TemperaturePointsTable extends StatelessWidget {
   final DateFormat hourFmt;
   final Color minColor;
   final Color maxColor;
+  final bool hideNonExtremeTempRows;
 
   @override
   Widget build(BuildContext context) {
+    final visiblePoints = hideNonExtremeTempRows
+        ? [
+            for (final p in points)
+              if (p.isDailyMinimum ||
+                  p.isDailyMaximum ||
+                  p.kind == TempPointKind.forecast)
+                p,
+          ]
+        : points;
+
     const headerStyle = TextStyle(
       fontSize: 11,
       fontWeight: FontWeight.w700,
@@ -479,55 +514,68 @@ class _TemperaturePointsTable extends StatelessWidget {
               header('Data Source'),
             ],
           ),
-          for (var i = 0; i < points.length; i++)
+          if (visiblePoints.isEmpty)
             TableRow(
-              decoration: BoxDecoration(
-                color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
-              ),
               children: [
-                cell(
-                  DailyTemperatureChart._formatPointDateTime(
-                    points[i].localHourStart,
-                    hourFmt,
-                  ),
-                ),
-                cell(
-                  '${points[i].temperature.toStringAsFixed(1)}$unit',
-                  align: TextAlign.right,
-                ),
-                cell(
-                  points[i].isDailyMaximum
-                      ? 'Max'
-                      : points[i].isDailyMinimum
-                          ? 'Min'
-                          : '—',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: (points[i].isDailyMinimum ||
-                            points[i].isDailyMaximum)
-                        ? FontWeight.w700
-                        : FontWeight.w400,
-                    color: points[i].isDailyMaximum
-                        ? maxColor
-                        : points[i].isDailyMinimum
-                            ? minColor
-                            : const Color(0xFF94A3B8),
-                  ),
-                ),
-                cell(
-                  points[i].kind == TempPointKind.observed
-                      ? 'Observed'
-                      : 'Forecasted',
-                ),
-                cell(
-                  points[i].dataSource.isEmpty ? '—' : points[i].dataSource,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
+                cell('No Min/Max extremes in range'),
+                cell(''),
+                cell(''),
+                cell(''),
+                cell(''),
               ],
-            ),
+            )
+          else
+            for (var i = 0; i < visiblePoints.length; i++)
+              TableRow(
+                decoration: BoxDecoration(
+                  color: i.isOdd ? const Color(0xFFF8FAFC) : Colors.white,
+                ),
+                children: [
+                  cell(
+                    DailyTemperatureChart._formatPointDateTime(
+                      visiblePoints[i].localHourStart,
+                      hourFmt,
+                    ),
+                  ),
+                  cell(
+                    '${visiblePoints[i].temperature.toStringAsFixed(1)}$unit',
+                    align: TextAlign.right,
+                  ),
+                  cell(
+                    visiblePoints[i].isDailyMaximum
+                        ? 'Max'
+                        : visiblePoints[i].isDailyMinimum
+                            ? 'Min'
+                            : '—',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: (visiblePoints[i].isDailyMinimum ||
+                              visiblePoints[i].isDailyMaximum)
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: visiblePoints[i].isDailyMaximum
+                          ? maxColor
+                          : visiblePoints[i].isDailyMinimum
+                              ? minColor
+                              : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  cell(
+                    visiblePoints[i].kind == TempPointKind.observed
+                        ? 'Observed'
+                        : 'Forecasted',
+                  ),
+                  cell(
+                    visiblePoints[i].dataSource.isEmpty
+                        ? '—'
+                        : visiblePoints[i].dataSource,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
         ],
       ),
     );

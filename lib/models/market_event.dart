@@ -282,6 +282,15 @@ class MarketEvent {
     return false;
   }
 
+  /// At least one temperature outcome with Buy Yes ≥ 95¢.
+  bool get matchesBuyYesAtLeast95 {
+    for (final market in markets) {
+      final yes = market.buyYesPrice;
+      if (yes != null && yes >= 0.95) return true;
+    }
+    return false;
+  }
+
   MarketEvent copyWith({
     List<OutcomeMarket>? markets,
     DailyTemperatureSeries? temperatureSeries,

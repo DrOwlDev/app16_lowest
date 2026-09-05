@@ -103,6 +103,7 @@ class MarketListPage extends StatefulWidget {
 enum _ListStrategy {
   showAll,
   lockedWithNos,
+  buyYesGe95,
 }
 
 class _MarketListPageState extends State<MarketListPage> {
@@ -126,6 +127,8 @@ class _MarketListPageState extends State<MarketListPage> {
   _ListStrategy _strategy = _ListStrategy.lockedWithNos;
   /// Hide thin temperature rows (Yes&lt;1¢ & No --). On by default.
   bool _hideThinOutcomes = true;
+  /// Hide temp-table rows that are neither daily Min nor Max. On by default.
+  bool _hideNonExtremeTempRows = true;
 
   @override
   void initState() {
@@ -168,7 +171,7 @@ class _MarketListPageState extends State<MarketListPage> {
 
     try {
       var events = await _api.fetchLowestTemperatureEvents();
-      if (_strategy == _ListStrategy.lockedWithNos) {
+      if (_strategyNeedsBuyPrices) {
         events = await _api.enrichEventsBuyPrices(events);
       }
       if (!mounted) return;
@@ -190,10 +193,14 @@ class _MarketListPageState extends State<MarketListPage> {
     }
   }
 
+  bool get _strategyNeedsBuyPrices =>
+      _strategy == _ListStrategy.lockedWithNos ||
+      _strategy == _ListStrategy.buyYesGe95;
+
   Future<void> _onStrategyChanged(_ListStrategy? value) async {
     if (value == null || value == _strategy) return;
     setState(() => _strategy = value);
-    if (value == _ListStrategy.lockedWithNos && _events.isNotEmpty) {
+    if (_strategyNeedsBuyPrices && _events.isNotEmpty) {
       setState(() => _refreshing = true);
       try {
         final events = await _api.enrichEventsBuyPrices(_events);
@@ -220,6 +227,10 @@ class _MarketListPageState extends State<MarketListPage> {
       if (remaining == null || remaining.isNegative) return false;
       if (_strategy == _ListStrategy.lockedWithNos &&
           !event.matchesLockedMarketWithNos) {
+        return false;
+      }
+      if (_strategy == _ListStrategy.buyYesGe95 &&
+          !event.matchesBuyYesAtLeast95) {
         return false;
       }
       if (query.isEmpty) return true;
@@ -322,6 +333,12 @@ class _MarketListPageState extends State<MarketListPage> {
                                 'Find Locked Market (≥ 90%) with No\'s Opportunities',
                               ),
                             ),
+                            DropdownMenuItem(
+                              value: _ListStrategy.buyYesGe95,
+                              child: Text(
+                                'Find Markets with Buy Yes >95c',
+                              ),
+                            ),
                           ],
                           onChanged: _onStrategyChanged,
                         ),
@@ -377,6 +394,25 @@ class _MarketListPageState extends State<MarketListPage> {
                   const Flexible(
                     child: Text(
                       'Hide thin rows (Yes <1¢ & No --)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Checkbox(
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    value: _hideNonExtremeTempRows,
+                    onChanged: (value) {
+                      setState(() => _hideNonExtremeTempRows = value ?? true);
+                    },
+                  ),
+                  const Flexible(
+                    child: Text(
+                      'Hide non-Min/Max table rows',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -503,6 +539,7 @@ class _MarketListPageState extends State<MarketListPage> {
             dayFormat: _dayFormat,
             expanded: _expandedEventId == event.id,
             hideThinOutcomes: _hideThinOutcomes,
+            hideNonExtremeTempRows: _hideNonExtremeTempRows,
             onExpansionChanged: (expanded) {
               setState(() {
                 _expandedEventId = expanded ? event.id : null;
@@ -594,6 +631,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.dayFormat,
     required this.expanded,
     required this.hideThinOutcomes,
+    required this.hideNonExtremeTempRows,
     required this.onExpansionChanged,
     required this.onOpen,
     required this.onOpenResolution,
@@ -606,6 +644,7 @@ class _MarketEventTile extends StatefulWidget {
   final DateFormat dayFormat;
   final bool expanded;
   final bool hideThinOutcomes;
+  final bool hideNonExtremeTempRows;
   final ValueChanged<bool> onExpansionChanged;
   final VoidCallback onOpen;
   final VoidCallback onOpenResolution;
@@ -929,6 +968,8 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                               : _tempSeries != null
                                   ? DailyTemperatureChart(
                                       series: _tempSeries!,
+                                      hideNonExtremeTempRows:
+                                          widget.hideNonExtremeTempRows,
                                     )
                                   : const SizedBox.shrink(),
                     ),

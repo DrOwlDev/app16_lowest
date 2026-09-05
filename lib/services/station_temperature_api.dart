@@ -82,6 +82,7 @@ class DailyTemperatureSeries {
     required this.dayEnd,
     required this.nowLocal,
     required this.points,
+    this.latestObservation,
   });
 
   final String siteId;
@@ -92,6 +93,9 @@ class DailyTemperatureSeries {
   final tz.TZDateTime nowLocal;
   final List<HourlyTempPoint> points;
 
+  /// Latest station observation from api.weather.gov (temp + observed time).
+  final LatestStationObservation? latestObservation;
+
   Map<String, dynamic> toJson() => {
         'siteId': siteId,
         'unit': unit,
@@ -100,6 +104,8 @@ class DailyTemperatureSeries {
         'dayEnd': dayEnd.toUtc().toIso8601String(),
         'nowLocal': nowLocal.toUtc().toIso8601String(),
         'points': points.map((p) => p.toJson()).toList(),
+        if (latestObservation != null)
+          'latestObservation': latestObservation!.toJson(),
       };
 
   factory DailyTemperatureSeries.fromJson(Map<String, dynamic> json) {
@@ -126,6 +132,16 @@ class DailyTemperatureSeries {
         }
       }
     }
+    LatestStationObservation? latest;
+    final latestRaw = json['latestObservation'];
+    if (latestRaw is Map<String, dynamic>) {
+      latest = LatestStationObservation.fromJson(latestRaw, location: location);
+    } else if (latestRaw is Map) {
+      latest = LatestStationObservation.fromJson(
+        Map<String, dynamic>.from(latestRaw),
+        location: location,
+      );
+    }
     return DailyTemperatureSeries(
       siteId: json['siteId']?.toString() ?? '',
       unit: json['unit']?.toString() == 'F' ? 'F' : 'C',
@@ -133,6 +149,34 @@ class DailyTemperatureSeries {
       dayEnd: _tzFromUtcIso(json['dayEnd']?.toString(), location),
       nowLocal: _tzFromUtcIso(json['nowLocal']?.toString(), location),
       points: points,
+      latestObservation: latest,
+    );
+  }
+}
+
+/// Latest observation from `api.weather.gov/stations/{id}/observations/latest`.
+class LatestStationObservation {
+  const LatestStationObservation({
+    required this.temperature,
+    required this.observedAtLocal,
+  });
+
+  /// Temperature in the series unit (`C` or `F`).
+  final double temperature;
+  final tz.TZDateTime observedAtLocal;
+
+  Map<String, dynamic> toJson() => {
+        'temp': temperature,
+        't': observedAtLocal.toUtc().toIso8601String(),
+      };
+
+  factory LatestStationObservation.fromJson(
+    Map<String, dynamic> json, {
+    required tz.Location location,
+  }) {
+    return LatestStationObservation(
+      temperature: (json['temp'] as num?)?.toDouble() ?? 0,
+      observedAtLocal: _tzFromUtcIso(json['t']?.toString(), location),
     );
   }
 }
@@ -190,19 +234,28 @@ class StationTemperatureApi {
     );
 
     final icao = siteId.toUpperCase();
-    final station = await _fetchStation(icao);
+    final unitNorm = unit == 'F' ? 'F' : 'C';
     final hoursNeeded = math.max(
       24,
       dayEnd.toUtc().difference(DateTime.now().toUtc()).inHours.abs() + 36,
     );
-
-    final obsC = await _fetchMetarObservationsC(
+    final stationFuture = _fetchStation(icao);
+    final obsFuture = _fetchMetarObservationsC(
       icao: icao,
       location: location,
       dayStart: dayStart,
       dayEnd: dayEnd,
       hours: hoursNeeded.clamp(24, 72),
     );
+    final latestFuture = _fetchNwsLatestObservation(
+      icao: icao,
+      location: location,
+      unit: unitNorm,
+    );
+
+    final station = await stationFuture;
+    final obsC = await obsFuture;
+    final latestObservation = await latestFuture;
 
     var forecastC = <int, double>{};
     var forecastSource = openMeteoForecastDataSource;
@@ -229,19 +282,52 @@ class StationTemperatureApi {
       nowLocal: nowLocal,
       observedC: obsC,
       forecastC: forecastC,
-      unit: unit == 'F' ? 'F' : 'C',
+      unit: unitNorm,
       observedDataSource: obsSource,
       forecastDataSource: forecastSource,
     );
 
     return DailyTemperatureSeries(
       siteId: icao,
-      unit: unit == 'F' ? 'F' : 'C',
+      unit: unitNorm,
       dayStart: dayStart,
       dayEnd: dayEnd,
       nowLocal: nowLocal,
       points: points,
+      latestObservation: latestObservation,
     );
+  }
+
+  Future<LatestStationObservation?> _fetchNwsLatestObservation({
+    required String icao,
+    required tz.Location location,
+    required String unit,
+  }) async {
+    try {
+      final uri = Uri.parse('$_nwsBase/stations/$icao/observations/latest');
+      final response = await _client.get(
+        uri,
+        headers: {
+          'User-Agent': _userAgent,
+          'Accept': 'application/geo+json',
+        },
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final props = decoded['properties'];
+      if (props is! Map) return null;
+      final tempObj = props['temperature'];
+      final tempC = tempObj is Map ? (tempObj['value'] as num?)?.toDouble() : null;
+      final ts = DateTime.tryParse(props['timestamp']?.toString() ?? '');
+      if (tempC == null || ts == null) return null;
+      return LatestStationObservation(
+        temperature: convertTempC(tempC, unit),
+        observedAtLocal: tz.TZDateTime.from(ts.toUtc(), location),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<({double lat, double lon})?> _fetchStation(String icao) async {

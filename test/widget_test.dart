@@ -10,7 +10,7 @@ void main() {
   testWidgets('Low Temp app shows search', (WidgetTester tester) async {
     await tester.pumpWidget(const LowTempApp());
     expect(find.text('Low Markets'), findsOneWidget);
-    expect(find.text('Markets'), findsOneWidget);
+    expect(find.text('Sites'), findsOneWidget);
     expect(find.text('Current Positions'), findsOneWidget);
     expect(find.text('Search city…'), findsOneWidget);
     expect(find.textContaining('Hide thin rows'), findsOneWidget);
@@ -137,6 +137,50 @@ void main() {
       isWeatherGovTimeseriesUrl(fromDesc.resolutionSourceUrl!),
       isFalse,
     );
+  });
+
+  test('matchesBuyYesAtLeast95 requires a Buy Yes ≥ 95¢ outcome', () {
+    final below = MarketEvent.fromJson({
+      'id': 'byes-1',
+      'title': 'Lowest temperature in Dallas on September 5?',
+      'slug': 'dallas',
+      'markets': [
+        {
+          'id': 'a',
+          'question': '20°C?',
+          'groupItemTitle': '20°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+          'bestAsk': 0.94,
+        },
+      ],
+    });
+    expect(below.matchesBuyYesAtLeast95, isFalse);
+
+    final atOrAbove = MarketEvent.fromJson({
+      'id': 'byes-2',
+      'title': 'Lowest temperature in Dallas on September 5?',
+      'slug': 'dallas',
+      'markets': [
+        {
+          'id': 'a',
+          'question': '20°C?',
+          'groupItemTitle': '20°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+          'bestAsk': 0.90,
+        },
+        {
+          'id': 'b',
+          'question': '21°C?',
+          'groupItemTitle': '21°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+          'bestAsk': 0.95,
+        },
+      ],
+    });
+    expect(atOrAbove.matchesBuyYesAtLeast95, isTrue);
   });
 
   test('displayChance prefers Buy Yes ask over outcomePrices mid', () {
