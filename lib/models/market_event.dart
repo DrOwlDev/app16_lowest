@@ -453,9 +453,7 @@ class MarketEvent {
 String adjustWeatherGovTimeseriesUrl(String url, String? temperatureUnit) {
   final uri = Uri.tryParse(url);
   if (uri == null) return url;
-  final isTimeseries = uri.host.contains('weather.gov') &&
-      uri.path.contains('/wrh/timeseries');
-  if (!isTimeseries) return url;
+  if (!isWeatherGovTimeseriesUrl(url)) return url;
 
   final params = Map<String, String>.from(uri.queryParameters);
   if (temperatureUnit == 'C') {
@@ -464,6 +462,23 @@ String adjustWeatherGovTimeseriesUrl(String url, String? temperatureUnit) {
     params.remove('units');
   }
   return uri.replace(queryParameters: params).toString();
+}
+
+/// True when [url] is a NOAA WRH timeseries station link.
+bool isWeatherGovTimeseriesUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  return uri.host.contains('weather.gov') &&
+      uri.path.contains('/wrh/timeseries');
+}
+
+/// Station code from `?site=` on a NOAA WRH timeseries URL, or null.
+String? weatherGovTimeseriesSiteId(String? url) {
+  if (url == null || url.isEmpty) return null;
+  if (!isWeatherGovTimeseriesUrl(url)) return null;
+  final site = Uri.tryParse(url)?.queryParameters['site']?.trim();
+  if (site == null || site.isEmpty) return null;
+  return site.toLowerCase();
 }
 
 /// Formats a displayed chance as Polymarket-style percent, or "—".

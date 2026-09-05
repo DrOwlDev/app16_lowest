@@ -131,6 +131,12 @@ void main() {
       fahrenheit.resolutionSourceOpenUrl,
       'https://www.weather.gov/wrh/timeseries?site=kord',
     );
+    expect(weatherGovTimeseriesSiteId(fahrenheit.resolutionSourceUrl), 'kord');
+    expect(isWeatherGovTimeseriesUrl(fahrenheit.resolutionSourceUrl!), isTrue);
+    expect(
+      isWeatherGovTimeseriesUrl(fromDesc.resolutionSourceUrl!),
+      isFalse,
+    );
   });
 
   test('displayChance prefers Buy Yes ask over outcomePrices mid', () {

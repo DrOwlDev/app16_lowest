@@ -229,6 +229,11 @@ class _MarketsPageState extends State<MarketsPage>
       itemBuilder: (context, index) {
         final row = _cities[index];
         final displayUrl = row.openUrl ?? row.resolutionUrl;
+        final siteId = weatherGovTimeseriesSiteId(row.resolutionUrl);
+        final isStandardTimeseries = siteId != null;
+        final titleText = isStandardTimeseries
+            ? '${row.cityName} - $siteId'
+            : row.cityName;
         return Card(
           child: ListTile(
             dense: true,
@@ -240,7 +245,7 @@ class _MarketsPageState extends State<MarketsPage>
               children: [
                 Flexible(
                   child: Text(
-                    row.cityName,
+                    titleText,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -250,6 +255,10 @@ class _MarketsPageState extends State<MarketsPage>
                 if (row.temperatureUnit != null) ...[
                   const SizedBox(width: 6),
                   _UnitBadge(unit: row.temperatureUnit!),
+                ],
+                if (!isStandardTimeseries) ...[
+                  const SizedBox(width: 6),
+                  const _UniqueSourceBadge(),
                 ],
               ],
             ),
@@ -326,6 +335,31 @@ class _UnitBadge extends StatelessWidget {
         isC ? '°C' : '°F',
         style: TextStyle(
           fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _UniqueSourceBadge extends StatelessWidget {
+  const _UniqueSourceBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFFDC2626);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.55)),
+      ),
+      child: const Text(
+        'Unique Resolution Source',
+        style: TextStyle(
+          fontSize: 10,
           fontWeight: FontWeight.w800,
           color: color,
         ),
