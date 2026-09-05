@@ -46,6 +46,32 @@ class HourlyTempPoint {
       isDailyMaximum: isDailyMaximum ?? this.isDailyMaximum,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        't': localHourStart.toUtc().toIso8601String(),
+        'temp': temperature,
+        'kind': kind == TempPointKind.observed ? 'observed' : 'forecast',
+        if (dataSource.isNotEmpty) 'dataSource': dataSource,
+        if (isDailyMinimum) 'isDailyMinimum': true,
+        if (isDailyMaximum) 'isDailyMaximum': true,
+      };
+
+  factory HourlyTempPoint.fromJson(
+    Map<String, dynamic> json, {
+    required tz.Location location,
+  }) {
+    final kindRaw = json['kind']?.toString() ?? 'forecast';
+    return HourlyTempPoint(
+      localHourStart: _tzFromUtcIso(json['t']?.toString(), location),
+      temperature: (json['temp'] as num?)?.toDouble() ?? 0,
+      kind: kindRaw == 'observed'
+          ? TempPointKind.observed
+          : TempPointKind.forecast,
+      dataSource: json['dataSource']?.toString() ?? '',
+      isDailyMinimum: json['isDailyMinimum'] == true,
+      isDailyMaximum: json['isDailyMaximum'] == true,
+    );
+  }
 }
 
 class DailyTemperatureSeries {
@@ -65,6 +91,58 @@ class DailyTemperatureSeries {
   final tz.TZDateTime dayEnd;
   final tz.TZDateTime nowLocal;
   final List<HourlyTempPoint> points;
+
+  Map<String, dynamic> toJson() => {
+        'siteId': siteId,
+        'unit': unit,
+        'timeZone': dayStart.location.name,
+        'dayStart': dayStart.toUtc().toIso8601String(),
+        'dayEnd': dayEnd.toUtc().toIso8601String(),
+        'nowLocal': nowLocal.toUtc().toIso8601String(),
+        'points': points.map((p) => p.toJson()).toList(),
+      };
+
+  factory DailyTemperatureSeries.fromJson(Map<String, dynamic> json) {
+    final tzName = json['timeZone']?.toString() ?? 'UTC';
+    late final tz.Location location;
+    try {
+      location = tz.getLocation(tzName);
+    } catch (_) {
+      location = tz.UTC;
+    }
+    final pointsRaw = json['points'];
+    final points = <HourlyTempPoint>[];
+    if (pointsRaw is List) {
+      for (final item in pointsRaw) {
+        if (item is Map<String, dynamic>) {
+          points.add(HourlyTempPoint.fromJson(item, location: location));
+        } else if (item is Map) {
+          points.add(
+            HourlyTempPoint.fromJson(
+              Map<String, dynamic>.from(item),
+              location: location,
+            ),
+          );
+        }
+      }
+    }
+    return DailyTemperatureSeries(
+      siteId: json['siteId']?.toString() ?? '',
+      unit: json['unit']?.toString() == 'F' ? 'F' : 'C',
+      dayStart: _tzFromUtcIso(json['dayStart']?.toString(), location),
+      dayEnd: _tzFromUtcIso(json['dayEnd']?.toString(), location),
+      nowLocal: _tzFromUtcIso(json['nowLocal']?.toString(), location),
+      points: points,
+    );
+  }
+}
+
+tz.TZDateTime _tzFromUtcIso(String? iso, tz.Location location) {
+  final parsed = DateTime.tryParse(iso ?? '');
+  if (parsed == null) {
+    return tz.TZDateTime.fromMillisecondsSinceEpoch(location, 0);
+  }
+  return tz.TZDateTime.from(parsed.toUtc(), location);
 }
 
 /// Fetches observed METARs + hourly forecast for a WRH timeseries site day.

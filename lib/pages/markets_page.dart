@@ -36,6 +36,7 @@ class _CityResolution {
 class _MarketsPageState extends State<MarketsPage>
     with AutomaticKeepAliveClientMixin {
   final PolymarketApi _api = PolymarketApi(preferStaticSnapshot: kIsWeb);
+  final TextEditingController _searchController = TextEditingController();
 
   List<_CityResolution> _cities = [];
   bool _loading = true;
@@ -49,13 +50,26 @@ class _MarketsPageState extends State<MarketsPage>
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() => setState(() {}));
     _load();
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _api.close();
     super.dispose();
+  }
+
+  List<_CityResolution> get _filteredCities {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _cities;
+    return _cities.where((c) {
+      if (c.cityName.toLowerCase().contains(query)) return true;
+      final siteId = weatherGovTimeseriesSiteId(c.resolutionUrl);
+      if (siteId != null && siteId.toLowerCase().contains(query)) return true;
+      return false;
+    }).toList();
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -141,19 +155,88 @@ class _MarketsPageState extends State<MarketsPage>
   Widget build(BuildContext context) {
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
+    final filtered = _filteredCities;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 6, 4),
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        hintText: 'Search city…',
+                        hintStyle: const TextStyle(fontSize: 13),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          size: 18,
+                          color: scheme.primary,
+                        ),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _searchController.clear(),
+                                icon: const Icon(Icons.clear, size: 16),
+                              ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_refreshing || (_loading && _cities.isNotEmpty))
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else if (_lastRefreshedAt != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        DateFormat.Hm().format(_lastRefreshedAt!),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Refresh cities',
+                    visualDensity: VisualDensity.compact,
+                    onPressed:
+                        (_loading || _refreshing) ? null : () => _load(),
+                    icon: const Icon(Icons.refresh, size: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
                   _loading && _cities.isEmpty
                       ? 'Cities…'
-                      : '${_cities.length} cities (A–Z)',
+                      : filtered.length == _cities.length
+                          ? '${_cities.length} cities (A–Z)'
+                          : '${filtered.length} of ${_cities.length} cities',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -161,42 +244,15 @@ class _MarketsPageState extends State<MarketsPage>
                   ),
                 ),
               ),
-              if (_refreshing || (_loading && _cities.isNotEmpty))
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else if (_lastRefreshedAt != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    DateFormat.Hm().format(_lastRefreshedAt!),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              IconButton(
-                tooltip: 'Refresh cities',
-                visualDensity: VisualDensity.compact,
-                onPressed: (_loading || _refreshing) ? null : () => _load(),
-                icon: const Icon(Icons.refresh, size: 18),
-              ),
             ],
           ),
         ),
-        Expanded(child: _buildBody(scheme)),
+        Expanded(child: _buildBody(scheme, filtered)),
       ],
     );
   }
 
-  Widget _buildBody(ColorScheme scheme) {
+  Widget _buildBody(ColorScheme scheme, List<_CityResolution> cities) {
     if (_loading && _cities.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -221,13 +277,16 @@ class _MarketsPageState extends State<MarketsPage>
     if (_cities.isEmpty) {
       return const Center(child: Text('No cities found'));
     }
+    if (cities.isEmpty) {
+      return const Center(child: Text('No cities match search'));
+    }
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      itemCount: _cities.length,
+      itemCount: cities.length,
       separatorBuilder: (_, _) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
-        final row = _cities[index];
+        final row = cities[index];
         final displayUrl = row.openUrl ?? row.resolutionUrl;
         final siteId = weatherGovTimeseriesSiteId(row.resolutionUrl);
         final isStandardTimeseries = siteId != null;

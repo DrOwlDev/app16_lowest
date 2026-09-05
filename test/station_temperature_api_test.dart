@@ -185,6 +185,43 @@ void main() {
       expect(fc.kind, TempPointKind.forecast);
       expect(fc.dataSource, 'api.weather.gov');
     });
+
+    test('DailyTemperatureSeries JSON round-trips for Pages snapshot', () {
+      final now = tz.TZDateTime(seattle, 2026, 3, 20, 14, 30);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: hourMap({10: 5, 11: 6}),
+        forecastC: hourMap({15: 8, 16: 9}),
+        unit: 'C',
+        observedDataSource: 'https://www.weather.gov/wrh/timeseries?site=ksea',
+        forecastDataSource: StationTemperatureApi.openMeteoForecastDataSource,
+      );
+      final series = DailyTemperatureSeries(
+        siteId: 'KSEA',
+        unit: 'C',
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        points: points,
+      );
+      final restored = DailyTemperatureSeries.fromJson(series.toJson());
+      expect(restored.siteId, 'KSEA');
+      expect(restored.unit, 'C');
+      expect(restored.dayStart.location.name, seattle.name);
+      expect(restored.points.length, points.length);
+      expect(restored.points.first.kind, TempPointKind.observed);
+      expect(restored.points.last.kind, TempPointKind.forecast);
+      expect(
+        restored.points.first.dataSource,
+        contains('timeseries?site=ksea'),
+      );
+      expect(
+        restored.nowLocal.millisecondsSinceEpoch,
+        now.millisecondsSinceEpoch,
+      );
+    });
   });
 
   group('chart eligibility smoke', () {

@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Export markets snapshot
+      - name: Export markets + temperature snapshot
         run: dart run tool/export_markets.dart web/data/markets.json
 
       - name: Build web

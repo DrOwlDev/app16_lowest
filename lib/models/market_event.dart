@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../services/city_timezones.dart';
+import '../services/station_temperature_api.dart';
 
 class OutcomeMarket {
   const OutcomeMarket({
@@ -187,6 +188,7 @@ class MarketEvent {
     required this.markets,
     this.description = '',
     this.resolutionSource = '',
+    this.temperatureSeries,
   });
 
   final String id;
@@ -198,6 +200,9 @@ class MarketEvent {
   final List<OutcomeMarket> markets;
   final String description;
   final String resolutionSource;
+
+  /// Preloaded hourly chart series (GitHub Pages snapshot). Null on live Gamma.
+  final DailyTemperatureSeries? temperatureSeries;
 
   String get polymarketUrl => 'https://polymarket.com/event/$slug';
 
@@ -277,7 +282,10 @@ class MarketEvent {
     return false;
   }
 
-  MarketEvent copyWith({List<OutcomeMarket>? markets}) {
+  MarketEvent copyWith({
+    List<OutcomeMarket>? markets,
+    DailyTemperatureSeries? temperatureSeries,
+  }) {
     return MarketEvent(
       id: id,
       title: title,
@@ -288,6 +296,7 @@ class MarketEvent {
       markets: markets ?? this.markets,
       description: description,
       resolutionSource: resolutionSource,
+      temperatureSeries: temperatureSeries ?? this.temperatureSeries,
     );
   }
 
@@ -403,6 +412,7 @@ class MarketEvent {
       markets: markets,
       description: description,
       resolutionSource: resolutionSource,
+      temperatureSeries: temperatureSeries,
     );
   }
 
@@ -421,6 +431,16 @@ class MarketEvent {
       }
     }
 
+    DailyTemperatureSeries? temperatureSeries;
+    final seriesRaw = json['temperatureSeries'];
+    if (seriesRaw is Map<String, dynamic>) {
+      temperatureSeries = DailyTemperatureSeries.fromJson(seriesRaw);
+    } else if (seriesRaw is Map) {
+      temperatureSeries = DailyTemperatureSeries.fromJson(
+        Map<String, dynamic>.from(seriesRaw),
+      );
+    }
+
     return MarketEvent(
       id: json['id']?.toString() ?? '',
       title: json['title'] as String? ?? '',
@@ -431,6 +451,7 @@ class MarketEvent {
       markets: markets,
       description: json['description']?.toString() ?? '',
       resolutionSource: json['resolutionSource']?.toString() ?? '',
+      temperatureSeries: temperatureSeries,
     );
   }
 
@@ -445,6 +466,8 @@ class MarketEvent {
       'description': description,
       'resolutionSource': resolutionSource,
       'markets': markets.map((m) => m.toSnapshotJson()).toList(),
+      if (temperatureSeries != null)
+        'temperatureSeries': temperatureSeries!.toJson(),
     };
   }
 }

@@ -463,9 +463,9 @@ class _TemperaturePointsTable extends StatelessWidget {
         columnWidths: const {
           0: FlexColumnWidth(2.2),
           1: FlexColumnWidth(0.8),
-          2: FlexColumnWidth(1.1),
-          3: FlexColumnWidth(2.4),
-          4: FlexColumnWidth(0.8),
+          2: FlexColumnWidth(0.8),
+          3: FlexColumnWidth(1.1),
+          4: FlexColumnWidth(2.4),
         },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         children: [
@@ -474,9 +474,9 @@ class _TemperaturePointsTable extends StatelessWidget {
             children: [
               header('Date / time'),
               header('Temp', align: TextAlign.right),
+              header('Extreme'),
               header('Type'),
               header('Data Source'),
-              header('Extreme'),
             ],
           ),
           for (var i = 0; i < points.length; i++)
@@ -496,18 +496,6 @@ class _TemperaturePointsTable extends StatelessWidget {
                   align: TextAlign.right,
                 ),
                 cell(
-                  points[i].kind == TempPointKind.observed
-                      ? 'Observed'
-                      : 'Forecasted',
-                ),
-                cell(
-                  points[i].dataSource.isEmpty ? '—' : points[i].dataSource,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                cell(
                   points[i].isDailyMaximum
                       ? 'Max'
                       : points[i].isDailyMinimum
@@ -524,6 +512,18 @@ class _TemperaturePointsTable extends StatelessWidget {
                         : points[i].isDailyMinimum
                             ? minColor
                             : const Color(0xFF94A3B8),
+                  ),
+                ),
+                cell(
+                  points[i].kind == TempPointKind.observed
+                      ? 'Observed'
+                      : 'Forecasted',
+                ),
+                cell(
+                  points[i].dataSource.isEmpty ? '—' : points[i].dataSource,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade700,
                   ),
                 ),
               ],

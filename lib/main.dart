@@ -73,7 +73,7 @@ class HomeShell extends StatelessWidget {
             ),
             tabs: const [
               Tab(text: 'Low Markets'),
-              Tab(text: 'Markets'),
+              Tab(text: 'Sites'),
               Tab(text: 'Current Positions'),
             ],
           ),
@@ -723,6 +723,19 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       setState(() {
         _tempError = 'No observation day';
         _tempLoaded = true;
+      });
+      return;
+    }
+
+    // GitHub Pages cannot call weather.gov / Open-Meteo (CORS); use snapshot.
+    if (kIsWeb) {
+      final preloaded = widget.event.temperatureSeries;
+      setState(() {
+        _tempSeries = preloaded;
+        _tempError =
+            preloaded == null ? 'Temperature chart unavailable' : null;
+        _tempLoaded = true;
+        _loadingTemp = false;
       });
       return;
     }
