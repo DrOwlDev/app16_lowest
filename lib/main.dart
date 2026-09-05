@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/market_event.dart';
+import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
 import 'services/polymarket_api.dart';
 
@@ -37,7 +38,49 @@ class LowTempApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const MarketListPage(),
+      home: const HomeShell(),
+    );
+  }
+}
+
+class HomeShell extends StatelessWidget {
+  const HomeShell({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 0,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          bottom: TabBar(
+            labelColor: scheme.primary,
+            unselectedLabelColor: scheme.onSurfaceVariant,
+            indicatorColor: scheme.primary,
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+            tabs: const [
+              Tab(text: 'Low Markets'),
+              Tab(text: 'Current Positions'),
+            ],
+          ),
+        ),
+        body: const SafeArea(
+          top: false,
+          child: TabBarView(
+            children: [
+              MarketListPage(),
+              PositionsPage(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -292,15 +335,13 @@ class _MarketListPageState extends State<MarketListPage> {
     final filtered = _filtered;
     final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
-              child: Column(
-                children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
+          child: Column(
+            children: [
                   Row(
                     children: [
                       Expanded(
@@ -366,6 +407,15 @@ class _MarketListPageState extends State<MarketListPage> {
                           color: scheme.primary,
                         ),
                       ),
+                      if (kIsWeb)
+                        IconButton(
+                          tooltip: 'Trigger data refresh on GitHub Actions',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _openUrl(
+                            'https://github.com/DrOwlDev/app16_lowest/actions/workflows/refresh-data.yml',
+                          ),
+                          icon: const Icon(Icons.cloud_sync_outlined, size: 18),
+                        ),
                       IconButton(
                         tooltip: 'Open Polymarket',
                         visualDensity: VisualDensity.compact,
@@ -470,8 +520,6 @@ class _MarketListPageState extends State<MarketListPage> {
             ),
             Expanded(child: _buildBody(filtered)),
           ],
-        ),
-      ),
     );
   }
 

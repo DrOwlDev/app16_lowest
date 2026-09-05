@@ -9,6 +9,8 @@ void main() {
 
   testWidgets('Low Temp app shows search', (WidgetTester tester) async {
     await tester.pumpWidget(const LowTempApp());
+    expect(find.text('Low Markets'), findsOneWidget);
+    expect(find.text('Current Positions'), findsOneWidget);
     expect(find.text('Search city…'), findsOneWidget);
     expect(find.textContaining('Min conv'), findsOneWidget);
   });
