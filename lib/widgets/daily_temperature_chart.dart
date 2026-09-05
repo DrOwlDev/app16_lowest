@@ -140,7 +140,7 @@ class DailyTemperatureChart extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                             labelResolver: (line) =>
-                                'min ${line.y.toStringAsFixed(0)}$unitSuffix',
+                                'min ${line.y.toStringAsFixed(1)}$unitSuffix',
                           ),
                         ),
                       if (dailyMaxTemp != null)
@@ -159,7 +159,7 @@ class DailyTemperatureChart extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                             labelResolver: (line) =>
-                                'max ${line.y.toStringAsFixed(0)}$unitSuffix',
+                                'max ${line.y.toStringAsFixed(1)}$unitSuffix',
                           ),
                         ),
                     ],
