@@ -60,6 +60,14 @@ class DailyTemperatureChart extends StatelessWidget {
 
     final hourFmt = DateFormat('HH:mm');
     final dayFmt = DateFormat('MMM d');
+    const lineColor = Color(0xFF111827);
+    double? dailyMinTemp;
+    for (final p in points) {
+      if (p.isDailyMinimum) {
+        dailyMinTemp = p.temperature;
+        break;
+      }
+    }
 
     return SizedBox(
       height: height,
@@ -91,6 +99,27 @@ class DailyTemperatureChart extends StatelessWidget {
               border: Border.all(color: Colors.grey.shade400, width: 1),
             ),
             extraLinesData: ExtraLinesData(
+              horizontalLines: [
+                if (dailyMinTemp != null)
+                  HorizontalLine(
+                    y: dailyMinTemp,
+                    color: const Color(0xFFFACC15),
+                    strokeWidth: 1.5,
+                    dashArray: const [6, 4],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topLeft,
+                      padding: const EdgeInsets.only(left: 4, bottom: 2),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFFCA8A04),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      labelResolver: (line) =>
+                          'min ${line.y.toStringAsFixed(0)}$unitSuffix',
+                    ),
+                  ),
+              ],
               verticalLines: [
                 if (nowMs > dayMs && nowMs < dayEndMs)
                   VerticalLine(
@@ -200,7 +229,7 @@ class DailyTemperatureChart extends StatelessWidget {
               LineChartBarData(
                 spots: spots,
                 isCurved: false,
-                color: const Color(0xFFDC2626),
+                color: lineColor,
                 barWidth: 2,
                 isStrokeCapRound: true,
                 dotData: FlDotData(
@@ -217,11 +246,9 @@ class DailyTemperatureChart extends StatelessWidget {
                     final filled = point.kind == TempPointKind.observed;
                     return FlDotCirclePainter(
                       radius: 2.5,
-                      color: filled
-                          ? const Color(0xFFDC2626)
-                          : Colors.white,
+                      color: filled ? lineColor : Colors.white,
                       strokeWidth: 1.5,
-                      strokeColor: const Color(0xFFDC2626),
+                      strokeColor: lineColor,
                     );
                   },
                 ),
