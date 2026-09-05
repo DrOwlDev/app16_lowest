@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/market_event.dart';
+import 'pages/markets_page.dart';
 import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
 import 'services/polymarket_api.dart';
@@ -50,7 +51,7 @@ class HomeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 0,
@@ -67,6 +68,7 @@ class HomeShell extends StatelessWidget {
             ),
             tabs: const [
               Tab(text: 'Low Markets'),
+              Tab(text: 'Markets'),
               Tab(text: 'Current Positions'),
             ],
           ),
@@ -76,6 +78,7 @@ class HomeShell extends StatelessWidget {
           child: TabBarView(
             children: [
               MarketListPage(),
+              MarketsPage(),
               PositionsPage(),
             ],
           ),
@@ -119,7 +122,9 @@ class _MarketListPageState extends State<MarketListPage> {
   /// Minimum remaining minutes until city-local EOD (0 = show all active).
   double _minMinutesToEod = 0;
   String? _expandedEventId;
-  _ListStrategy _strategy = _ListStrategy.showAll;
+  _ListStrategy _strategy = _ListStrategy.lockedWithNos;
+  /// Hide thin temperature rows (Yes&lt;1¢ & No --). On by default.
+  bool _hideThinOutcomes = true;
 
   @override
   void initState() {
@@ -489,6 +494,20 @@ class _MarketListPageState extends State<MarketListPage> {
                       ),
                     ],
                   ),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _hideThinOutcomes,
+                    onChanged: (value) {
+                      setState(() => _hideThinOutcomes = value ?? true);
+                    },
+                    title: const Text(
+                      'Hide thin rows (Yes <1¢ & No --)',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ),
                   _compactSlider(
                     title: 'Min conv.',
                     value: _minConvergence,
@@ -575,6 +594,7 @@ class _MarketListPageState extends State<MarketListPage> {
             volumeFormat: _volumeFormat,
             dayFormat: _dayFormat,
             expanded: _expandedEventId == event.id,
+            hideThinOutcomes: _hideThinOutcomes,
             onExpansionChanged: (expanded) {
               setState(() {
                 _expandedEventId = expanded ? event.id : null;
@@ -668,6 +688,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.volumeFormat,
     required this.dayFormat,
     required this.expanded,
+    required this.hideThinOutcomes,
     required this.onExpansionChanged,
     required this.onOpen,
   });
@@ -678,6 +699,7 @@ class _MarketEventTile extends StatefulWidget {
   final NumberFormat volumeFormat;
   final DateFormat dayFormat;
   final bool expanded;
+  final bool hideThinOutcomes;
   final ValueChanged<bool> onExpansionChanged;
   final VoidCallback onOpen;
 
@@ -763,7 +785,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     final fill = _marketConvergenceFill(leadingYes);
     final remaining = event.timeToLocalEndOfDay;
     final eodLabel = formatTimeToEndOfDay(remaining);
-    final visible = _markets;
+    final visible = widget.hideThinOutcomes
+        ? _markets.where((m) => !m.isThinOutcomeRow).toList()
+        : _markets;
 
     return Card(
       color: fill,

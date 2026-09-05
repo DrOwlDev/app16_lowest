@@ -10,6 +10,7 @@ void main() {
   testWidgets('Low Temp app shows search', (WidgetTester tester) async {
     await tester.pumpWidget(const LowTempApp());
     expect(find.text('Low Markets'), findsOneWidget);
+    expect(find.text('Markets'), findsOneWidget);
     expect(find.text('Current Positions'), findsOneWidget);
     expect(find.text('Search city…'), findsOneWidget);
     expect(find.textContaining('Min conv'), findsOneWidget);
@@ -63,10 +64,73 @@ void main() {
     expect(event.localEndOfDay, isNotNull);
     expect(
       formatTimeToEndOfDay(const Duration(hours: 5, minutes: 12)),
-      '5h 12m to EOD',
+      '5h 12m',
     );
     expect(formatTimeToEndOfDay(const Duration(minutes: -1)), 'EOD passed');
     expect(event.topMarkets().first.displayLabel, '26°C');
+  });
+
+  test('resolutionSourceUrl prefers field then description URL', () {
+    final fromField = MarketEvent.fromJson({
+      'id': '1',
+      'title': 'Lowest temperature in Wellington on September 5?',
+      'slug': 'wellington',
+      'resolutionSource': 'https://www.weather.gov/wrh/timeseries?site=nzwn',
+      'description': 'fallback https://example.com/ignore',
+      'markets': [
+        {
+          'id': '10',
+          'question': '9°C?',
+          'groupItemTitle': '9°C',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+        },
+      ],
+    });
+    expect(
+      fromField.resolutionSourceUrl,
+      'https://www.weather.gov/wrh/timeseries?site=nzwn',
+    );
+    expect(fromField.temperatureUnit, 'C');
+    expect(
+      fromField.resolutionSourceOpenUrl,
+      'https://www.weather.gov/wrh/timeseries?site=nzwn&units=metric',
+    );
+
+    final fromDesc = MarketEvent.fromJson({
+      'id': '2',
+      'title': 'Lowest temperature in Hong Kong on September 5?',
+      'slug': 'hk',
+      'resolutionSource': '',
+      'description':
+          'available here: https://www.weather.gov.hk/en/cis/climat.htm',
+      'markets': [],
+    });
+    expect(
+      fromDesc.resolutionSourceUrl,
+      'https://www.weather.gov.hk/en/cis/climat.htm',
+    );
+
+    final fahrenheit = MarketEvent.fromJson({
+      'id': '3',
+      'title': 'Lowest temperature in Chicago on September 5?',
+      'slug': 'chicago',
+      'resolutionSource': 'https://www.weather.gov/wrh/timeseries?site=kord',
+      'markets': [
+        {
+          'id': '30',
+          'question': '50-51°F?',
+          'groupItemTitle': '50-51°F',
+          'outcomes': '["Yes", "No"]',
+          'outcomePrices': '["0.5", "0.5"]',
+        },
+      ],
+    });
+    expect(fahrenheit.temperatureUnit, 'F');
+    expect(
+      fahrenheit.resolutionSourceOpenUrl,
+      'https://www.weather.gov/wrh/timeseries?site=kord',
+    );
   });
 
   test('displayChance prefers Buy Yes ask over outcomePrices mid', () {
@@ -162,6 +226,6 @@ void main() {
     final remaining = eod.difference(now);
     expect(remaining.inHours, 3);
     expect(remaining.inMinutes.remainder(60), 19);
-    expect(formatTimeToEndOfDay(remaining), '3h 19m to EOD');
+    expect(formatTimeToEndOfDay(remaining), '3h 19m');
   });
 }

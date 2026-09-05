@@ -105,6 +105,12 @@ class OutcomeMarket {
   bool get bothBuysInactive =>
       _isZeroOrMissing(buyYesPrice) && _isZeroOrMissing(buyNoPrice);
 
+  /// Thin row: Buy Yes &lt;1¢ with Buy No unavailable ("--").
+  bool get isThinOutcomeRow {
+    final yes = buyYesPrice;
+    return yes != null && yes < 0.01 && _isZeroOrMissing(buyNoPrice);
+  }
+
   String get displayLabel {
     if (groupItemTitle.isNotEmpty) return groupItemTitle;
     return question;
@@ -179,6 +185,8 @@ class MarketEvent {
     required this.volume24hr,
     required this.endDate,
     required this.markets,
+    this.description = '',
+    this.resolutionSource = '',
   });
 
   final String id;
@@ -188,6 +196,8 @@ class MarketEvent {
   final double volume24hr;
   final DateTime? endDate;
   final List<OutcomeMarket> markets;
+  final String description;
+  final String resolutionSource;
 
   String get polymarketUrl => 'https://polymarket.com/event/$slug';
 
@@ -199,6 +209,45 @@ class MarketEvent {
     ).firstMatch(title);
     if (match != null) return match.group(1)!.trim();
     return title;
+  }
+
+  /// Resolution source URL from Gamma `resolutionSource` or Rules/description text.
+  String? get resolutionSourceUrl {
+    final direct = resolutionSource.trim();
+    if (direct.startsWith('http://') || direct.startsWith('https://')) {
+      return direct;
+    }
+    final match = RegExp(
+      r'https?://[^\s\)\"<>]+',
+      caseSensitive: false,
+    ).firstMatch(description);
+    if (match == null) return null;
+    return match.group(0)!.replaceAll(RegExp(r'[.,;:]+$'), '');
+  }
+
+  /// Temperature unit used by this market's outcomes: `C`, `F`, or null if unknown.
+  String? get temperatureUnit {
+    for (final market in markets) {
+      final label = '${market.groupItemTitle} ${market.question}';
+      if (label.contains('°F')) return 'F';
+      if (label.contains('°C')) return 'C';
+    }
+    final blob = '$title $description';
+    if (RegExp(r'degrees?\s+Fahrenheit|°F', caseSensitive: false)
+        .hasMatch(blob)) {
+      return 'F';
+    }
+    if (RegExp(r'degrees?\s+Celsius|°C', caseSensitive: false).hasMatch(blob)) {
+      return 'C';
+    }
+    return null;
+  }
+
+  /// Resolution URL adjusted for NOAA timeseries metric units when market is °C.
+  String? get resolutionSourceOpenUrl {
+    final url = resolutionSourceUrl;
+    if (url == null) return null;
+    return adjustWeatherGovTimeseriesUrl(url, temperatureUnit);
   }
 
   /// Highest displayed chance among outcomes (Buy Yes / last / mid).
@@ -237,6 +286,8 @@ class MarketEvent {
       volume24hr: volume24hr,
       endDate: endDate,
       markets: markets ?? this.markets,
+      description: description,
+      resolutionSource: resolutionSource,
     );
   }
 
@@ -350,6 +401,8 @@ class MarketEvent {
       volume24hr: volume24hr,
       endDate: endDate,
       markets: markets,
+      description: description,
+      resolutionSource: resolutionSource,
     );
   }
 
@@ -376,6 +429,8 @@ class MarketEvent {
       volume24hr: _asDouble(json['volume24hr']),
       endDate: _parseDate(json['endDate']),
       markets: markets,
+      description: json['description']?.toString() ?? '',
+      resolutionSource: json['resolutionSource']?.toString() ?? '',
     );
   }
 
@@ -387,9 +442,28 @@ class MarketEvent {
       'volume': volume,
       'volume24hr': volume24hr,
       if (endDate != null) 'endDate': endDate!.toUtc().toIso8601String(),
+      'description': description,
+      'resolutionSource': resolutionSource,
       'markets': markets.map((m) => m.toSnapshotJson()).toList(),
     };
   }
+}
+
+/// For NOAA WRH timeseries links: append `units=metric` when the market is °C.
+String adjustWeatherGovTimeseriesUrl(String url, String? temperatureUnit) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return url;
+  final isTimeseries = uri.host.contains('weather.gov') &&
+      uri.path.contains('/wrh/timeseries');
+  if (!isTimeseries) return url;
+
+  final params = Map<String, String>.from(uri.queryParameters);
+  if (temperatureUnit == 'C') {
+    params['units'] = 'metric';
+  } else {
+    params.remove('units');
+  }
+  return uri.replace(queryParameters: params).toString();
 }
 
 /// Formats a displayed chance as Polymarket-style percent, or "—".
@@ -422,10 +496,10 @@ String formatTimeToEndOfDay(Duration? remaining) {
   final days = remaining.inDays;
   final hours = remaining.inHours.remainder(24);
   final minutes = remaining.inMinutes.remainder(60);
-  if (days > 0) return '${days}d ${hours}h to EOD';
-  if (remaining.inHours > 0) return '${remaining.inHours}h ${minutes}m to EOD';
-  if (minutes > 0) return '${minutes}m to EOD';
-  return '<1m to EOD';
+  if (days > 0) return '${days}d ${hours}h';
+  if (remaining.inHours > 0) return '${remaining.inHours}h ${minutes}m';
+  if (minutes > 0) return '${minutes}m';
+  return '<1m';
 }
 
 bool _isZeroOrMissing(double? price) {
