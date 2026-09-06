@@ -9,6 +9,7 @@ import 'models/market_event.dart';
 import 'pages/markets_page.dart';
 import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
+import 'services/hko_temperature_api.dart';
 import 'services/polymarket_api.dart';
 import 'services/station_temperature_api.dart';
 import 'widgets/daily_temperature_chart.dart';
@@ -550,6 +551,9 @@ class _MarketListPageState extends State<MarketListPage> {
               final url = event.resolutionSourceOpenUrl;
               if (url != null) _openUrl(url);
             },
+            onOpenHkoPortal: isHongKongTemperatureMarket(event)
+                ? () => _openUrl(HkoTemperatureApi.regionalPortalUrl)
+                : null,
           );
         },
       ),
@@ -635,6 +639,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.onExpansionChanged,
     required this.onOpen,
     required this.onOpenResolution,
+    this.onOpenHkoPortal,
   });
 
   final MarketEvent event;
@@ -648,6 +653,7 @@ class _MarketEventTile extends StatefulWidget {
   final ValueChanged<bool> onExpansionChanged;
   final VoidCallback onOpen;
   final VoidCallback onOpenResolution;
+  final VoidCallback? onOpenHkoPortal;
 
   @override
   State<_MarketEventTile> createState() => _MarketEventTileState();
@@ -659,6 +665,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   bool _pricesLoaded = false;
 
   final StationTemperatureApi _tempApi = StationTemperatureApi();
+  final HkoTemperatureApi _hkoTempApi = HkoTemperatureApi();
   bool _loadingTemp = false;
   bool _tempLoaded = false;
   DailyTemperatureSeries? _tempSeries;
@@ -667,6 +674,12 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   String? get _timeseriesSiteId =>
       weatherGovTimeseriesSiteId(widget.event.resolutionSourceOpenUrl) ??
       weatherGovTimeseriesSiteId(widget.event.resolutionSourceUrl);
+
+  bool get _isHongKongChart =>
+      hongKongOcfStationId(widget.event) != null;
+
+  bool get _showTemperatureChart =>
+      isChartableTemperatureSource(widget.event);
 
   @override
   void initState() {
@@ -685,6 +698,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   @override
   void dispose() {
     _tempApi.close();
+    _hkoTempApi.close();
     super.dispose();
   }
 
@@ -752,8 +766,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   }
 
   Future<void> _loadTemperatureSeries({bool force = false}) async {
-    final siteId = _timeseriesSiteId;
-    if (siteId == null) return;
+    if (!_showTemperatureChart) return;
     if (_loadingTemp) return;
     if (_tempLoaded && !force) return;
 
@@ -766,7 +779,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       return;
     }
 
-    // GitHub Pages cannot call weather.gov / Open-Meteo (CORS); use snapshot.
+    // GitHub Pages cannot call HKO / weather.gov (CORS); use snapshot.
     if (kIsWeb) {
       final preloaded = widget.event.temperatureSeries;
       setState(() {
@@ -784,16 +797,32 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       _tempError = null;
     });
     try {
-      final series = await _tempApi.fetchDailySeries(
-        siteId: siteId,
-        cityName: widget.event.cityName,
-        year: day.year,
-        month: day.month,
-        day: day.day,
-        unit: widget.event.temperatureUnit ?? 'C',
-        observedDataSource: widget.event.resolutionSourceUrl ??
-            widget.event.resolutionSourceOpenUrl,
-      );
+      final observedSource = widget.event.resolutionSourceUrl ??
+          widget.event.resolutionSourceOpenUrl;
+      final DailyTemperatureSeries series;
+      if (_isHongKongChart) {
+        series = await _hkoTempApi.fetchDailySeries(
+          year: day.year,
+          month: day.month,
+          day: day.day,
+          unit: widget.event.temperatureUnit ?? 'C',
+          observedDataSource: observedSource,
+        );
+      } else {
+        final siteId = _timeseriesSiteId;
+        if (siteId == null) {
+          throw StateError('Missing WRH site id');
+        }
+        series = await _tempApi.fetchDailySeries(
+          siteId: siteId,
+          cityName: widget.event.cityName,
+          year: day.year,
+          month: day.month,
+          day: day.day,
+          unit: widget.event.temperatureUnit ?? 'C',
+          observedDataSource: observedSource,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _tempSeries = series;
@@ -907,6 +936,17 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (widget.onOpenHkoPortal != null)
+                      IconButton(
+                        tooltip: 'Open HKO regional portal',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onOpenHkoPortal,
+                        icon: Icon(
+                          Icons.map_outlined,
+                          size: 18,
+                          color: accent,
+                        ),
+                      ),
                     if (resolutionOpenUrl != null)
                       IconButton(
                         tooltip: 'Open resolution source',
@@ -942,7 +982,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                           market: market,
                           volumeFormat: widget.volumeFormat,
                         )),
-                  if (_timeseriesSiteId != null) ...[
+                  if (_showTemperatureChart) ...[
                     const Divider(height: 1),
                     ColoredBox(
                       color: Colors.white,

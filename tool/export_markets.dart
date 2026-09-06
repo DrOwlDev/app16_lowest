@@ -3,20 +3,22 @@ import 'dart:io';
 
 import 'package:app16_lowest/models/market_event.dart';
 import 'package:app16_lowest/services/city_timezones.dart';
+import 'package:app16_lowest/services/hko_temperature_api.dart';
 import 'package:app16_lowest/services/polymarket_api.dart';
 import 'package:app16_lowest/services/station_temperature_api.dart';
 
 /// Fetches live Polymarket low-temp markets (+ CLOB asks) and writes
 /// `web/data/markets.json` for GitHub Pages.
 ///
-/// Also preloads WRH station temperature series so the web app can render
-/// charts without browser calls to weather.gov / Open-Meteo (CORS).
+/// Also preloads WRH + HKO temperature series so the web app can render
+/// charts without browser CORS to weather APIs.
 Future<void> main(List<String> args) async {
   CityTimezones.ensureInitialized();
 
   final outPath = args.isNotEmpty ? args.first : 'web/data/markets.json';
   final api = PolymarketApi(preferStaticSnapshot: false);
   final tempApi = StationTemperatureApi();
+  final hkoApi = HkoTemperatureApi();
 
   stdout.writeln('Fetching lowest-temperature events…');
   var events = await api.fetchLowestTemperatureEvents();
@@ -24,9 +26,10 @@ Future<void> main(List<String> args) async {
   events = await api.enrichEventsBuyPrices(events);
   api.close();
 
-  stdout.writeln('Preloading temperature series for WRH stations…');
-  events = await _attachTemperatureSeries(events, tempApi);
+  stdout.writeln('Preloading temperature series (WRH + HKO)…');
+  events = await _attachTemperatureSeries(events, tempApi, hkoApi);
   tempApi.close();
+  hkoApi.close();
 
   final withSeries =
       events.where((e) => e.temperatureSeries != null).length;
@@ -51,6 +54,7 @@ Future<void> main(List<String> args) async {
 Future<List<MarketEvent>> _attachTemperatureSeries(
   List<MarketEvent> events,
   StationTemperatureApi tempApi,
+  HkoTemperatureApi hkoApi,
 ) async {
   final cache = <String, Future<DailyTemperatureSeries?>>{};
   const concurrency = 6;
@@ -58,29 +62,50 @@ Future<List<MarketEvent>> _attachTemperatureSeries(
   final results = List<MarketEvent>.from(events);
 
   Future<DailyTemperatureSeries?> seriesFor(MarketEvent event) {
-    final siteId =
-        weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) ??
-            weatherGovTimeseriesSiteId(event.resolutionSourceUrl);
     final day = event.observationDayInCity;
-    if (siteId == null || day == null) {
+    if (day == null || !isChartableTemperatureSource(event)) {
       return Future<DailyTemperatureSeries?>.value(null);
     }
 
     final unit = event.temperatureUnit ?? 'C';
-    final key =
-        '${siteId.toUpperCase()}|${day.year}-${day.month}-${day.day}|$unit';
+    final observedSource =
+        event.resolutionSourceUrl ?? event.resolutionSourceOpenUrl;
+    final hkoStation = hongKongOcfStationId(event);
+    final siteId =
+        weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) ??
+            weatherGovTimeseriesSiteId(event.resolutionSourceUrl);
+
+    final String key;
+    if (hkoStation != null) {
+      key = '$hkoStation|${day.year}-${day.month}-${day.day}|$unit';
+    } else if (siteId != null) {
+      key = '${siteId.toUpperCase()}|${day.year}-${day.month}-${day.day}|$unit';
+    } else {
+      return Future<DailyTemperatureSeries?>.value(null);
+    }
+
     return cache.putIfAbsent(key, () async {
       try {
-        final series = await tempApi.fetchDailySeries(
-          siteId: siteId,
-          cityName: event.cityName,
-          year: day.year,
-          month: day.month,
-          day: day.day,
-          unit: unit,
-          observedDataSource:
-              event.resolutionSourceUrl ?? event.resolutionSourceOpenUrl,
-        );
+        final DailyTemperatureSeries series;
+        if (hkoStation != null) {
+          series = await hkoApi.fetchDailySeries(
+            year: day.year,
+            month: day.month,
+            day: day.day,
+            unit: unit,
+            observedDataSource: observedSource,
+          );
+        } else {
+          series = await tempApi.fetchDailySeries(
+            siteId: siteId!,
+            cityName: event.cityName,
+            year: day.year,
+            month: day.month,
+            day: day.day,
+            unit: unit,
+            observedDataSource: observedSource,
+          );
+        }
         stdout.writeln(
           '  ✓ $key (${series.points.length} points, ${event.cityName})',
         );

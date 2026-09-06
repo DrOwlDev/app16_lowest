@@ -517,6 +517,39 @@ String? weatherGovTimeseriesSiteId(String? url) {
   return site.toLowerCase();
 }
 
+/// True when [url] points at Hong Kong Observatory / weather.gov.hk.
+bool isHongKongObservatorySource(String? url) {
+  if (url == null || url.isEmpty) return false;
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  final host = uri.host.toLowerCase();
+  return host.contains('weather.gov.hk') || host.contains('hko.gov.hk');
+}
+
+/// True when [event] is the Hong Kong HKO temperature market.
+bool isHongKongTemperatureMarket(MarketEvent event) {
+  if (isHongKongObservatorySource(event.resolutionSourceOpenUrl) ||
+      isHongKongObservatorySource(event.resolutionSourceUrl)) {
+    return true;
+  }
+  return event.cityName.toLowerCase() == 'hong kong';
+}
+
+/// True when this market can show an expand temperature chart.
+bool isChartableTemperatureSource(MarketEvent event) {
+  if (weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) != null ||
+      weatherGovTimeseriesSiteId(event.resolutionSourceUrl) != null) {
+    return true;
+  }
+  return isHongKongTemperatureMarket(event);
+}
+
+/// HKO OCF station id when [event] is a Hong Kong chartable market.
+String? hongKongOcfStationId(MarketEvent event) {
+  if (!isHongKongTemperatureMarket(event)) return null;
+  return 'HKO';
+}
+
 /// Formats a displayed chance as Polymarket-style percent, or "—".
 String formatChancePercent(double? chance) {
   if (chance == null) return '—';

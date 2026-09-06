@@ -14,8 +14,9 @@ Uses Polymarket Gamma + CLOB directly.
 ## GitHub Pages (static snapshot)
 
 Web build reads `data/markets.json` (same-origin) so browser CORS is not required.
-That snapshot includes Polymarket odds **and** preloaded WRH station temperature
-series (METAR + NWS/Open-Meteo) so expand charts work without live weather APIs.
+That snapshot includes Polymarket odds **and** preloaded station temperature
+series (WRH METAR/NWS/Open-Meteo and Hong Kong HKO hkoc+OCF) so expand charts
+work without live weather APIs in the browser.
 
 - Site: https://drowldev.github.io/app16_lowest/
 - Deploy workflow: builds Flutter web on every `main` push
