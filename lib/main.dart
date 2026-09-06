@@ -28,7 +28,7 @@ class LowTempApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Low Temp Markets',
+      title: 'Temperature Markets',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -95,7 +95,7 @@ class _HomeShellState extends State<HomeShell> {
                   fontWeight: FontWeight.w700,
                 ),
                 tabs: const [
-                  Tab(text: 'Low/High Temp'),
+                  Tab(text: 'Temperature Markets'),
                   Tab(text: 'Sites'),
                   Tab(text: 'Current Positions'),
                 ],

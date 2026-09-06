@@ -29,6 +29,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Same exporter as deploy-pages: dual-tag markets + WRH/WU/HKO series.
       - name: Export markets + temperature snapshot
         run: dart run tool/export_markets.dart web/data/markets.json
 

@@ -9,7 +9,7 @@ void main() {
 
   testWidgets('Low Temp app shows search', (WidgetTester tester) async {
     await tester.pumpWidget(const LowTempApp());
-    expect(find.text('Low/High Temp'), findsOneWidget);
+    expect(find.text('Temperature Markets'), findsOneWidget);
     expect(find.text('Sites'), findsOneWidget);
     expect(find.text('Current Positions'), findsOneWidget);
     expect(find.text('Search city…'), findsOneWidget);

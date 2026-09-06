@@ -30,6 +30,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Snapshot includes lowest + highest Gamma tags and preloaded temp series
+      # so the web app matches Windows/Android market logic without CORS calls.
       - name: Export markets + temperature snapshot
         run: dart run tool/export_markets.dart web/data/markets.json
 
