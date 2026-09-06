@@ -95,7 +95,7 @@ class _HomeShellState extends State<HomeShell> {
                   fontWeight: FontWeight.w700,
                 ),
                 tabs: const [
-                  Tab(text: 'Low Markets'),
+                  Tab(text: 'Low/High Temp'),
                   Tab(text: 'Sites'),
                   Tab(text: 'Current Positions'),
                 ],
@@ -175,7 +175,7 @@ class _MarketListPageState extends State<MarketListPage> {
   bool _hideNonExtremeTempRows = true;
 
   final List<MarketAlert> _alertLog = [];
-  final Map<String, double> _prevObsMinByEventId = {};
+  final Map<String, double> _prevObsExtremumByEventId = {};
   Set<String> _prevLockedIds = {};
   final Map<String, DateTime> _alertDedupeAt = {};
 
@@ -238,24 +238,30 @@ class _MarketListPageState extends State<MarketListPage> {
     );
   }
 
-  void _onObservedMin(MarketEvent event, double? obsMin) {
-    if (obsMin == null) return;
-    final prev = _prevObsMinByEventId[event.id];
-    _prevObsMinByEventId[event.id] = obsMin;
-    if (prev != null && obsMin < prev - 1e-9) {
-      final unit = event.temperatureUnit ?? 'C';
-      _pushAlert(
-        MarketAlert(
-          at: DateTime.now(),
-          kind: MarketAlertKind.obsMinDrop,
-          eventId: event.id,
-          title: event.title,
-          message:
-              '${event.cityName}: obs min ${formatTempOneDecimal(prev)} → '
-              '${formatTempOneDecimal(obsMin)}°$unit',
-        ),
-      );
-    }
+  void _onObservedExtremum(MarketEvent event, double? extremum) {
+    if (extremum == null) return;
+    final prev = _prevObsExtremumByEventId[event.id];
+    _prevObsExtremumByEventId[event.id] = extremum;
+    if (prev == null) return;
+    final unit = event.temperatureUnit ?? 'C';
+    final high = event.tempKind == TempMarketKind.high;
+    final changed = high
+        ? extremum > prev + 1e-9
+        : extremum < prev - 1e-9;
+    if (!changed) return;
+    _pushAlert(
+      MarketAlert(
+        at: DateTime.now(),
+        kind: MarketAlertKind.obsMinDrop,
+        eventId: event.id,
+        title: event.title,
+        message: high
+            ? '${event.cityName}: obs max ${formatTempOneDecimal(prev)} → '
+                '${formatTempOneDecimal(extremum)}°$unit'
+            : '${event.cityName}: obs min ${formatTempOneDecimal(prev)} → '
+                '${formatTempOneDecimal(extremum)}°$unit',
+      ),
+    );
   }
 
   void _detectNewLockAlerts(List<MarketEvent> events) {
@@ -303,7 +309,7 @@ class _MarketListPageState extends State<MarketListPage> {
     });
 
     try {
-      var events = await _api.fetchLowestTemperatureEvents();
+      var events = await _api.fetchTemperatureEvents();
       if (_strategyNeedsBuyPrices) {
         events = await _api.enrichEventsBuyPrices(events);
       }
@@ -602,7 +608,7 @@ class _MarketListPageState extends State<MarketListPage> {
                     tooltip: 'Open Polymarket',
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _openUrl(
-                      'https://polymarket.com/weather/low-temperature',
+                      'https://polymarket.com/weather',
                     ),
                     icon: const Icon(Icons.open_in_new, size: 18),
                   ),
@@ -737,7 +743,7 @@ class _MarketListPageState extends State<MarketListPage> {
                 _expandedEventId = expanded ? event.id : null;
               });
             },
-            onObservedMin: (min) => _onObservedMin(event, min),
+            onObservedExtremum: (v) => _onObservedExtremum(event, v),
             onOpen: () => _openUrl(event.polymarketUrl),
             onOpenResolution: () {
               final url = event.resolutionSourceOpenUrl;
@@ -822,7 +828,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.hideThinOutcomes,
     required this.hideNonExtremeTempRows,
     required this.onExpansionChanged,
-    required this.onObservedMin,
+    required this.onObservedExtremum,
     required this.onOpen,
     required this.onOpenResolution,
     this.onOpenHkoPortal,
@@ -837,7 +843,7 @@ class _MarketEventTile extends StatefulWidget {
   final bool hideThinOutcomes;
   final bool hideNonExtremeTempRows;
   final ValueChanged<bool> onExpansionChanged;
-  final ValueChanged<double?> onObservedMin;
+  final ValueChanged<double?> onObservedExtremum;
   final VoidCallback onOpen;
   final VoidCallback onOpenResolution;
   final VoidCallback? onOpenHkoPortal;
@@ -974,8 +980,10 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         _tempLoaded = true;
         _loadingTemp = false;
       });
-      widget.onObservedMin(
-        preloaded == null ? null : seriesObservedMin(preloaded),
+      widget.onObservedExtremum(
+        preloaded == null
+            ? null
+            : seriesObservedExtremum(preloaded, widget.event.tempKind),
       );
       return;
     }
@@ -1017,7 +1025,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         _tempLoaded = true;
         _loadingTemp = false;
       });
-      widget.onObservedMin(seriesObservedMin(series));
+      widget.onObservedExtremum(
+        seriesObservedExtremum(series, widget.event.tempKind),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1047,8 +1057,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     final isStandardTimeseries =
         weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) != null ||
             weatherGovTimeseriesSiteId(event.resolutionSourceUrl) != null;
-    final observedMin =
-        _tempSeries == null ? null : seriesObservedMin(_tempSeries!);
+    final observedExtremum = _tempSeries == null
+        ? null
+        : seriesObservedExtremum(_tempSeries!, event.tempKind);
 
     return Card(
       color: fill,
@@ -1088,6 +1099,17 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                     runSpacing: 2,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      _MetaPill(
+                        icon: event.tempKind == TempMarketKind.high
+                            ? Icons.thermostat
+                            : Icons.ac_unit,
+                        label: event.tempKind == TempMarketKind.high
+                            ? 'High'
+                            : 'Low',
+                        color: event.tempKind == TempMarketKind.high
+                            ? const Color(0xFFC2410C)
+                            : const Color(0xFF0369A1),
+                      ),
                       if (day != null)
                         _MetaPill(
                           icon: Icons.event,
@@ -1175,13 +1197,18 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                     ...visible.map((market) => _OutcomeBuyRow(
                           market: market,
                           volumeFormat: widget.volumeFormat,
-                          isDead: observedMin != null &&
-                              outcomeMarketIsPhysicsDead(market, observedMin),
+                          isDead: observedExtremum != null &&
+                              outcomeMarketIsPhysicsDead(
+                                market,
+                                observedExtremum,
+                                kind: event.tempKind,
+                              ),
                         )),
                   if (_tempSeries != null)
                     SettlementBucketHud(
                       series: _tempSeries!,
                       markets: _markets,
+                      tempKind: event.tempKind,
                     ),
                   if (_showTemperatureChart) ...[
                     const Divider(height: 1),

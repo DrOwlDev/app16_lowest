@@ -24,10 +24,14 @@ void main() {
       expect(f?.unit, 'F');
     });
 
-    test('or below', () {
-      final b = parseTempOutcomeBucket('20°C or below');
-      expect(b?.kind, TempBucketKind.orBelow);
-      expect(b?.exact, 20);
+    test('or below and or above', () {
+      final below = parseTempOutcomeBucket('20°C or below');
+      expect(below?.kind, TempBucketKind.orBelow);
+      expect(below?.exact, 20);
+
+      final above = parseTempOutcomeBucket('30°C or above');
+      expect(above?.kind, TempBucketKind.orAbove);
+      expect(above?.exact, 30);
     });
 
     test('range', () {
@@ -39,25 +43,71 @@ void main() {
     });
   });
 
-  group('isPhysicsDeadOutcome', () {
+  group('isPhysicsDeadOutcome low', () {
     test('exact warmer than obs min is dead', () {
       final exact18 = parseTempOutcomeBucket('18°C')!;
-      expect(isPhysicsDeadOutcome(exact18, 17), isTrue);
-      expect(isPhysicsDeadOutcome(exact18, 18), isFalse);
-      expect(isPhysicsDeadOutcome(exact18, 18.5), isFalse);
+      expect(
+        isPhysicsDeadOutcome(exact18, 17, kind: TempMarketKind.low),
+        isTrue,
+      );
+      expect(
+        isPhysicsDeadOutcome(exact18, 18, kind: TempMarketKind.low),
+        isFalse,
+      );
     });
 
     test('or below never dead from observed alone', () {
       final floor = parseTempOutcomeBucket('16°C or below')!;
-      expect(isPhysicsDeadOutcome(floor, 20), isFalse);
-      expect(isPhysicsDeadOutcome(floor, 10), isFalse);
+      expect(
+        isPhysicsDeadOutcome(floor, 20, kind: TempMarketKind.low),
+        isFalse,
+      );
     });
 
     test('range dead when obs already below lo', () {
       final range = parseTempOutcomeBucket('50-51°F')!;
-      expect(isPhysicsDeadOutcome(range, 49), isTrue);
-      expect(isPhysicsDeadOutcome(range, 50), isFalse);
-      expect(isPhysicsDeadOutcome(range, 50.5), isFalse);
+      expect(
+        isPhysicsDeadOutcome(range, 49, kind: TempMarketKind.low),
+        isTrue,
+      );
+      expect(
+        isPhysicsDeadOutcome(range, 50, kind: TempMarketKind.low),
+        isFalse,
+      );
+    });
+  });
+
+  group('isPhysicsDeadOutcome high', () {
+    test('exact colder than obs max is dead', () {
+      final exact28 = parseTempOutcomeBucket('28°C')!;
+      expect(
+        isPhysicsDeadOutcome(exact28, 29, kind: TempMarketKind.high),
+        isTrue,
+      );
+      expect(
+        isPhysicsDeadOutcome(exact28, 28, kind: TempMarketKind.high),
+        isFalse,
+      );
+    });
+
+    test('or below dies when max exceeds floor', () {
+      final floor = parseTempOutcomeBucket('25°C or below')!;
+      expect(
+        isPhysicsDeadOutcome(floor, 26, kind: TempMarketKind.high),
+        isTrue,
+      );
+      expect(
+        isPhysicsDeadOutcome(floor, 25, kind: TempMarketKind.high),
+        isFalse,
+      );
+    });
+
+    test('or above never dead from observed alone', () {
+      final ceiling = parseTempOutcomeBucket('35°C or above')!;
+      expect(
+        isPhysicsDeadOutcome(ceiling, 40, kind: TempMarketKind.high),
+        isFalse,
+      );
     });
   });
 
@@ -71,26 +121,27 @@ void main() {
           volume: 0,
         );
 
-    test('picks exact degree containing obs min', () {
+    test('low picks exact degree containing obs min', () {
       final leading = leadingSettlementBucket(
         [m('17°C'), m('18°C'), m('16°C or below')],
         17,
+        kind: TempMarketKind.low,
       );
       expect(leading?.label, '17°C');
     });
 
-    test('falls back to or-below when colder', () {
+    test('high picks exact degree containing obs max', () {
       final leading = leadingSettlementBucket(
-        [m('18°C'), m('16°C or below')],
-        15,
+        [m('25°C or below'), m('28°C'), m('29°C')],
+        28,
+        kind: TempMarketKind.high,
       );
-      expect(leading?.kind, TempBucketKind.orBelow);
-      expect(leading?.exact, 16);
+      expect(leading?.label, '28°C');
     });
   });
 
-  group('series mins', () {
-    test('observed and forecast remaining mins', () {
+  group('series mins and maxes', () {
+    test('observed and forecast remaining extrema', () {
       final loc = tz.getLocation('Asia/Shanghai');
       final dayStart = tz.TZDateTime(loc, 2026, 9, 6);
       final dayEnd = dayStart.add(const Duration(days: 1));
@@ -112,6 +163,7 @@ void main() {
             localHourStart: tz.TZDateTime(loc, 2026, 9, 6, 10),
             temperature: 22,
             kind: TempPointKind.observed,
+            isDailyMaximum: true,
           ),
           HourlyTempPoint(
             localHourStart: tz.TZDateTime(loc, 2026, 9, 6, 14),
@@ -120,13 +172,47 @@ void main() {
           ),
           HourlyTempPoint(
             localHourStart: tz.TZDateTime(loc, 2026, 9, 6, 18),
-            temperature: 18,
+            temperature: 24,
             kind: TempPointKind.forecast,
           ),
         ],
       );
       expect(seriesObservedMin(series), 17);
-      expect(seriesForecastRemainingMin(series), 18);
+      expect(seriesObservedMax(series), 22);
+      expect(seriesForecastRemainingMin(series), 19);
+      expect(seriesForecastRemainingMax(series), 24);
+      expect(
+        seriesObservedExtremum(series, TempMarketKind.high),
+        22,
+      );
+      expect(
+        seriesForecastRemainingExtremum(series, TempMarketKind.high),
+        24,
+      );
+    });
+  });
+
+  group('MarketEvent tempKind and cityName', () {
+    test('Highest title parses city and high kind', () {
+      final event = MarketEvent.fromJson({
+        'id': 'h1',
+        'title': 'Highest temperature in Hong Kong on September 6?',
+        'slug': 'hk-high',
+        'markets': [],
+      });
+      expect(event.tempKind, TempMarketKind.high);
+      expect(event.cityName, 'Hong Kong');
+    });
+
+    test('Lowest title remains low kind', () {
+      final event = MarketEvent.fromJson({
+        'id': 'l1',
+        'title': 'Lowest temperature in Jinan on September 6?',
+        'slug': 'jn-low',
+        'markets': [],
+      });
+      expect(event.tempKind, TempMarketKind.low);
+      expect(event.cityName, 'Jinan');
     });
   });
 }

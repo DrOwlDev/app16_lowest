@@ -3,7 +3,7 @@ import 'package:app16_lowest/services/station_temperature_api.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 /// How a Polymarket temperature outcome label maps to settlement degrees.
-enum TempBucketKind { exact, orBelow, range }
+enum TempBucketKind { exact, orBelow, orAbove, range }
 
 class TempOutcomeBucket {
   const TempOutcomeBucket({
@@ -28,6 +28,8 @@ class TempOutcomeBucket {
         return exact != null && (temp - exact!).abs() < 1e-9;
       case TempBucketKind.orBelow:
         return exact != null && temp <= exact! + 1e-9;
+      case TempBucketKind.orAbove:
+        return exact != null && temp >= exact! - 1e-9;
       case TempBucketKind.range:
         if (lo == null || hi == null) return false;
         return temp >= lo! - 1e-9 && temp <= hi! + 1e-9;
@@ -43,12 +45,16 @@ final _orBelowRe = RegExp(
   r'^\s*(-?\d+(?:\.\d+)?)\s*°?\s*([CF])\s+or\s+below\s*$',
   caseSensitive: false,
 );
+final _orAboveRe = RegExp(
+  r'^\s*(-?\d+(?:\.\d+)?)\s*°?\s*([CF])\s+or\s+above\s*$',
+  caseSensitive: false,
+);
 final _rangeRe = RegExp(
   r'^\s*(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)\s*°?\s*([CF])\s*$',
   caseSensitive: false,
 );
 
-/// Parse outcome labels like `26°C`, `20°C or below`, `50-51°F`.
+/// Parse labels like `26°C`, `20°C or below`, `30°C or above`, `50-51°F`.
 TempOutcomeBucket? parseTempOutcomeBucket(String label) {
   final raw = label.trim();
   if (raw.isEmpty) return null;
@@ -61,6 +67,18 @@ TempOutcomeBucket? parseTempOutcomeBucket(String label) {
       kind: TempBucketKind.orBelow,
       label: raw,
       unit: orBelow.group(2)!.toUpperCase(),
+      exact: v,
+    );
+  }
+
+  final orAbove = _orAboveRe.firstMatch(raw);
+  if (orAbove != null) {
+    final v = double.tryParse(orAbove.group(1)!);
+    if (v == null) return null;
+    return TempOutcomeBucket(
+      kind: TempBucketKind.orAbove,
+      label: raw,
+      unit: orAbove.group(2)!.toUpperCase(),
       exact: v,
     );
   }
@@ -96,15 +114,11 @@ TempOutcomeBucket? parseTempOutcomeBucket(String label) {
   return null;
 }
 
-/// Min among observed points before [dayEnd]; falls back to daily-min flag.
+/// Min among observed points before dayEnd; falls back to daily-min flag.
 double? seriesObservedMin(DailyTemperatureSeries series) {
   double? minTemp;
   for (final p in series.points) {
     if (p.kind != TempPointKind.observed) continue;
-    if (!p.localHourStart.isBefore(series.dayEnd) &&
-        p.localHourStart != series.dayEnd) {
-      continue;
-    }
     if (p.localHourStart.isAfter(series.dayEnd)) continue;
     if (minTemp == null || p.temperature < minTemp) {
       minTemp = p.temperature;
@@ -117,7 +131,32 @@ double? seriesObservedMin(DailyTemperatureSeries series) {
   return null;
 }
 
-/// Min among forecast points at/after [nowLocal] (defaults to series.nowLocal).
+/// Max among observed points; falls back to daily-max flag.
+double? seriesObservedMax(DailyTemperatureSeries series) {
+  double? maxTemp;
+  for (final p in series.points) {
+    if (p.kind != TempPointKind.observed) continue;
+    if (p.localHourStart.isAfter(series.dayEnd)) continue;
+    if (maxTemp == null || p.temperature > maxTemp) {
+      maxTemp = p.temperature;
+    }
+  }
+  if (maxTemp != null) return maxTemp;
+  for (final p in series.points) {
+    if (p.isDailyMaximum) return p.temperature;
+  }
+  return null;
+}
+
+double? seriesObservedExtremum(
+  DailyTemperatureSeries series,
+  TempMarketKind kind,
+) =>
+    kind == TempMarketKind.high
+        ? seriesObservedMax(series)
+        : seriesObservedMin(series);
+
+/// Min among forecast points at/after [nowLocal].
 double? seriesForecastRemainingMin(
   DailyTemperatureSeries series, {
   tz.TZDateTime? nowLocal,
@@ -135,29 +174,80 @@ double? seriesForecastRemainingMin(
   return minTemp;
 }
 
-/// Physics-dead: final daily low can only stay or fall from [observedMin].
-bool isPhysicsDeadOutcome(TempOutcomeBucket bucket, double observedMin) {
+/// Max among forecast points at/after [nowLocal].
+double? seriesForecastRemainingMax(
+  DailyTemperatureSeries series, {
+  tz.TZDateTime? nowLocal,
+}) {
+  final now = nowLocal ?? series.nowLocal;
+  double? maxTemp;
+  for (final p in series.points) {
+    if (p.kind != TempPointKind.forecast) continue;
+    if (p.localHourStart.isBefore(now)) continue;
+    if (p.localHourStart.isAfter(series.dayEnd)) continue;
+    if (maxTemp == null || p.temperature > maxTemp) {
+      maxTemp = p.temperature;
+    }
+  }
+  return maxTemp;
+}
+
+double? seriesForecastRemainingExtremum(
+  DailyTemperatureSeries series,
+  TempMarketKind kind, {
+  tz.TZDateTime? nowLocal,
+}) =>
+    kind == TempMarketKind.high
+        ? seriesForecastRemainingMax(series, nowLocal: nowLocal)
+        : seriesForecastRemainingMin(series, nowLocal: nowLocal);
+
+/// Physics-dead from current observed extremum (min for low, max for high).
+bool isPhysicsDeadOutcome(
+  TempOutcomeBucket bucket,
+  double observedExtremum, {
+  required TempMarketKind kind,
+}) {
+  if (kind == TempMarketKind.high) {
+    switch (bucket.kind) {
+      case TempBucketKind.exact:
+        return bucket.exact != null && observedExtremum > bucket.exact!;
+      case TempBucketKind.range:
+        return bucket.hi != null && observedExtremum > bucket.hi!;
+      case TempBucketKind.orBelow:
+        return bucket.exact != null && observedExtremum > bucket.exact!;
+      case TempBucketKind.orAbove:
+        return false;
+    }
+  }
+
   switch (bucket.kind) {
     case TempBucketKind.exact:
-      return bucket.exact != null && observedMin < bucket.exact!;
+      return bucket.exact != null && observedExtremum < bucket.exact!;
     case TempBucketKind.range:
-      return bucket.lo != null && observedMin < bucket.lo!;
+      return bucket.lo != null && observedExtremum < bucket.lo!;
     case TempBucketKind.orBelow:
       return false;
+    case TempBucketKind.orAbove:
+      return bucket.exact != null && observedExtremum < bucket.exact!;
   }
 }
 
-bool outcomeMarketIsPhysicsDead(OutcomeMarket market, double observedMin) {
+bool outcomeMarketIsPhysicsDead(
+  OutcomeMarket market,
+  double observedExtremum, {
+  required TempMarketKind kind,
+}) {
   final bucket = parseTempOutcomeBucket(market.displayLabel);
   if (bucket == null) return false;
-  return isPhysicsDeadOutcome(bucket, observedMin);
+  return isPhysicsDeadOutcome(bucket, observedExtremum, kind: kind);
 }
 
-/// Alive bucket that currently contains [observedMin], else colder or-below.
+/// Alive bucket that contains [observedExtremum], else floor/ceiling bucket.
 TempOutcomeBucket? leadingSettlementBucket(
   Iterable<OutcomeMarket> markets,
-  double observedMin,
-) {
+  double observedExtremum, {
+  required TempMarketKind kind,
+}) {
   final buckets = <TempOutcomeBucket>[];
   for (final m in markets) {
     final b = parseTempOutcomeBucket(m.displayLabel);
@@ -166,22 +256,61 @@ TempOutcomeBucket? leadingSettlementBucket(
   if (buckets.isEmpty) return null;
 
   for (final b in buckets) {
-    if (isPhysicsDeadOutcome(b, observedMin)) continue;
-    if (b.kind == TempBucketKind.exact && b.contains(observedMin)) return b;
-    if (b.kind == TempBucketKind.range && b.contains(observedMin)) return b;
+    if (isPhysicsDeadOutcome(b, observedExtremum, kind: kind)) continue;
+    if (b.kind == TempBucketKind.exact && b.contains(observedExtremum)) {
+      return b;
+    }
+    if (b.kind == TempBucketKind.range && b.contains(observedExtremum)) {
+      return b;
+    }
   }
 
-  // Exact integer match when obs is fractional but within the degree (e.g. 17.2 → 17).
   for (final b in buckets) {
     if (b.kind != TempBucketKind.exact || b.exact == null) continue;
-    if (isPhysicsDeadOutcome(b, observedMin)) continue;
-    if (observedMin >= b.exact! && observedMin < b.exact! + 1) return b;
+    if (isPhysicsDeadOutcome(b, observedExtremum, kind: kind)) continue;
+    if (observedExtremum >= b.exact! && observedExtremum < b.exact! + 1) {
+      return b;
+    }
+  }
+
+  if (kind == TempMarketKind.high) {
+    TempOutcomeBucket? bestOrAbove;
+    for (final b in buckets) {
+      if (b.kind != TempBucketKind.orAbove || b.exact == null) continue;
+      if (isPhysicsDeadOutcome(b, observedExtremum, kind: kind)) continue;
+      if (!b.contains(observedExtremum) && observedExtremum < b.exact!) {
+        continue;
+      }
+      if (bestOrAbove == null ||
+          (b.exact != null &&
+              bestOrAbove.exact != null &&
+              b.exact! < bestOrAbove.exact!)) {
+        bestOrAbove = b;
+      }
+    }
+    if (bestOrAbove != null) return bestOrAbove;
+
+    // High markets often use "D or below" as the cold floor of the ladder.
+    TempOutcomeBucket? bestOrBelow;
+    for (final b in buckets) {
+      if (b.kind != TempBucketKind.orBelow || b.exact == null) continue;
+      if (isPhysicsDeadOutcome(b, observedExtremum, kind: kind)) continue;
+      if (bestOrBelow == null ||
+          (b.exact != null &&
+              bestOrBelow.exact != null &&
+              b.exact! > bestOrBelow.exact!)) {
+        bestOrBelow = b;
+      }
+    }
+    return bestOrBelow;
   }
 
   TempOutcomeBucket? bestOrBelow;
   for (final b in buckets) {
     if (b.kind != TempBucketKind.orBelow || b.exact == null) continue;
-    if (!b.contains(observedMin) && observedMin > b.exact!) continue;
+    if (!b.contains(observedExtremum) && observedExtremum > b.exact!) {
+      continue;
+    }
     if (bestOrBelow == null ||
         (b.exact != null &&
             bestOrBelow.exact != null &&

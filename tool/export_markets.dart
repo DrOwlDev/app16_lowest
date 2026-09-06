@@ -20,8 +20,8 @@ Future<void> main(List<String> args) async {
   final tempApi = StationTemperatureApi();
   final hkoApi = HkoTemperatureApi();
 
-  stdout.writeln('Fetching lowest-temperature events…');
-  var events = await api.fetchLowestTemperatureEvents();
+  stdout.writeln('Fetching lowest + highest temperature events…');
+  var events = await api.fetchTemperatureEvents();
   stdout.writeln('Enriching CLOB Buy Yes/No for ${events.length} events…');
   events = await api.enrichEventsBuyPrices(events);
   api.close();

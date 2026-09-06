@@ -86,7 +86,7 @@ class _MarketsPageState extends State<MarketsPage>
     });
 
     try {
-      final events = await _api.fetchLowestTemperatureEvents();
+      final events = await _api.fetchTemperatureEvents();
       if (!mounted) return;
       setState(() {
         _cities = _uniqueCities(events);

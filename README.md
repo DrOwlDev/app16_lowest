@@ -1,7 +1,8 @@
 # app16_lowest
 
 Flutter desktop + web app for browsing Polymarket
-[lowest-temperature](https://polymarket.com/weather/low-temperature) weather markets,
+[lowest](https://polymarket.com/weather/low-temperature) and
+[highest](https://polymarket.com/weather/high-temperature) temperature weather markets,
 with expand charts aligned to each market’s **resolution source**.
 
 | Platform | Data |
@@ -11,6 +12,7 @@ with expand charts aligned to each market’s **resolution source**.
 
 - Live site: https://drowldev.github.io/app16_lowest/
 - Proxy wallet for **Current Positions**: `0x8cEF3c1B592953D61EEE2bC9375C5944A8926B6d`
+- Gamma tags: Lowest `104597` + Highest `104596` (unified list, deduped by event id)
 
 ---
 
@@ -36,15 +38,15 @@ flutter build web --release --base-href /app16_lowest/
 
 ## Tabs
 
-1. **Low Markets** — market browser (filters, accordion, charts)
+1. **Low/High Temp** — unified browser of low + high daily temperature markets
 2. **Sites** — unique cities A–Z with resolution URLs
 3. **Current Positions** — open positions for the configured Polymarket proxy wallet
 
-UI defaults: white scaffold/cards; dense Windows layout (no wasteful top banners).
+UI defaults: white scaffold/cards; dense Windows layout (no wasteful top banners). Each market row shows a **Low** / **High** chip.
 
 ---
 
-## Low Markets logic
+## Low/High Temp logic
 
 ### Listing & refresh
 
@@ -88,14 +90,14 @@ Shown when the market is **chartable** (see [Resolution sources](#resolution-sou
 - Blue min / orange max lines + stars (full decimal precision from series).
 - Red **now** line; label uses latest station obs temp/time when available.
 - Table: Extreme column next to Temp; optional Min/Max row filter above.
-- **Settlement HUD** (when series loaded): Obs min, Fcst rem, Leading bucket; warmer exact/range outcomes that can no longer win are marked **Dead** (physics: final low can only stay or fall).
-- **In-app alerts** (SnackBar + dismissible strip): new lower obs min on an expanded chart; newly appearing lock-with-No (≥90% + No opportunity) after refresh.
+- **Settlement HUD** (when series loaded): for **Low** — Obs min / Fcst rem (min) / Leading / warmer buckets dead; for **High** — Obs max / Fcst rem (max) / Leading / colder buckets dead. Physics-dead outcomes get a **Dead** chip (low: final min can only fall; high: final max can only rise).
+- **In-app alerts** (SnackBar + dismissible strip): new lower obs min (low markets) or higher obs max (high markets) on expanded charts; newly appearing lock-with-No after refresh.
 
 ### Current Positions
 
-- Joins to Low Markets cache by `eventSlug`/`slug` and CLOB `asset` → token ids.
+- Joins to Low/High Temp cache by `eventSlug`/`slug` and CLOB `asset` → token ids.
 - Chips: outcome label, live **chance** (`displayChance`, else Data API mark), city-local **EOD**.
-- Tap row → Low Markets tab and expand that event; external Polymarket icon still available.
+- Tap row → Low/High Temp tab and expand that event; external Polymarket icon still available.
 - Auto-refresh every 3 minutes.
 
 ---
@@ -138,8 +140,9 @@ Notes:
 
 | Path | Role |
 |---|---|
-| `lib/main.dart` | Low Markets UI, filters, alerts, 3‑min refresh, expand + chart routing |
-| `lib/models/temp_outcome_bucket.dart` | Settlement bucket parse + physics-dead outcomes |
+| `lib/main.dart` | Low/High Temp UI, filters, alerts, 3‑min refresh, expand + chart routing |
+| `lib/services/polymarket_api.dart` | Gamma dual-tag fetch (104597 + 104596) + CLOB enrich |
+| `lib/models/temp_outcome_bucket.dart` | Settlement bucket parse + kind-aware physics-dead outcomes |
 | `lib/models/market_event.dart` | Odds/chance, strategies, EOD, chart eligibility (WRH / WU / HKO) |
 | `lib/services/station_temperature_api.dart` | METAR + forecast cascade + Weather.com historical fallback |
 | `lib/services/hko_temperature_api.dart` | Hong Kong observed + OCF |

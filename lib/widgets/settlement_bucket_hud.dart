@@ -4,24 +4,28 @@ import '../models/market_event.dart';
 import '../models/temp_outcome_bucket.dart';
 import '../services/station_temperature_api.dart';
 
-/// Compact settlement strip: obs min, forecast remaining min, leading bucket.
+/// Compact settlement strip: obs extremum, forecast remaining, leading bucket.
 class SettlementBucketHud extends StatelessWidget {
   const SettlementBucketHud({
     super.key,
     required this.series,
     required this.markets,
+    required this.tempKind,
   });
 
   final DailyTemperatureSeries series;
   final List<OutcomeMarket> markets;
+  final TempMarketKind tempKind;
 
   @override
   Widget build(BuildContext context) {
-    final obs = seriesObservedMin(series);
-    final fcst = seriesForecastRemainingMin(series);
+    final high = tempKind == TempMarketKind.high;
+    final obs = seriesObservedExtremum(series, tempKind);
+    final fcst = seriesForecastRemainingExtremum(series, tempKind);
     final unit = series.unit == 'F' ? 'F' : 'C';
-    final leading =
-        obs == null ? null : leadingSettlementBucket(markets, obs);
+    final leading = obs == null
+        ? null
+        : leadingSettlementBucket(markets, obs, kind: tempKind);
 
     String fmt(double? t) =>
         t == null ? '—' : '${formatTempOneDecimal(t)}°$unit';
@@ -43,13 +47,13 @@ class SettlementBucketHud extends StatelessWidget {
               color: Color(0xFF334155),
             ),
           ),
-          _kv('Obs min', fmt(obs)),
+          _kv(high ? 'Obs max' : 'Obs min', fmt(obs)),
           _kv('Fcst rem', fmt(fcst)),
           _kv('Leading', leading?.label ?? '—'),
           if (obs != null)
-            const Text(
-              'warmer buckets dead',
-              style: TextStyle(
+            Text(
+              high ? 'colder buckets dead' : 'warmer buckets dead',
+              style: const TextStyle(
                 fontSize: 10,
                 color: Color(0xFF64748B),
                 fontStyle: FontStyle.italic,

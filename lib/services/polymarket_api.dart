@@ -4,11 +4,11 @@ import 'package:http/http.dart' as http;
 
 import '../models/market_event.dart';
 
-/// Fetches Lowest Temperature events from Polymarket Gamma API.
+/// Fetches Lowest + Highest Temperature events from Polymarket Gamma API.
 ///
 /// When [preferStaticSnapshot] is true (GitHub Pages web build), loads a
 /// same-origin snapshot at `data/markets.json` so browser CORS to Polymarket
-/// is not required. Windows keeps live Gamma + CLOB calls.
+/// is not required. Windows/Android keep live Gamma + CLOB calls.
 class PolymarketApi {
   PolymarketApi({
     http.Client? client,
@@ -16,6 +16,7 @@ class PolymarketApi {
   }) : _client = client ?? http.Client();
 
   static const int lowestTemperatureTagId = 104597;
+  static const int highestTemperatureTagId = 104596;
   static const String _baseUrl = 'https://gamma-api.polymarket.com';
   static const String _clobUrl = 'https://clob.polymarket.com';
   static const int _pageSize = 100;
@@ -26,12 +27,27 @@ class PolymarketApi {
 
   bool get _useStaticSnapshot => preferStaticSnapshot;
 
-  /// Pages through all active, open events tagged Lowest temperature.
-  Future<List<MarketEvent>> fetchLowestTemperatureEvents() async {
+  /// Active open Lowest + Highest temperature events (deduped by id).
+  Future<List<MarketEvent>> fetchTemperatureEvents() async {
     if (_useStaticSnapshot) {
       return _fetchFromStaticSnapshot();
     }
-    return _fetchFromGamma();
+    final low = await _fetchFromGamma(lowestTemperatureTagId);
+    final high = await _fetchFromGamma(highestTemperatureTagId);
+    return _dedupeById([...low, ...high]);
+  }
+
+  /// Alias for [fetchTemperatureEvents] (legacy name).
+  Future<List<MarketEvent>> fetchLowestTemperatureEvents() =>
+      fetchTemperatureEvents();
+
+  static List<MarketEvent> _dedupeById(List<MarketEvent> events) {
+    final seen = <String>{};
+    final out = <MarketEvent>[];
+    for (final e in events) {
+      if (seen.add(e.id)) out.add(e);
+    }
+    return out;
   }
 
   Future<List<MarketEvent>> _fetchFromStaticSnapshot() async {
@@ -68,14 +84,14 @@ class PolymarketApi {
     }).toList();
   }
 
-  Future<List<MarketEvent>> _fetchFromGamma() async {
+  Future<List<MarketEvent>> _fetchFromGamma(int tagId) async {
     final events = <MarketEvent>[];
     var offset = 0;
 
     while (true) {
       final uri = Uri.parse('$_baseUrl/events').replace(
         queryParameters: {
-          'tag_id': '$lowestTemperatureTagId',
+          'tag_id': '$tagId',
           'active': 'true',
           'closed': 'false',
           'limit': '$_pageSize',

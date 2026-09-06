@@ -18,10 +18,10 @@ class PositionsPage extends StatefulWidget {
 
   static const userId = PolymarketPositionsApi.defaultUserId;
 
-  /// Live Low Markets cache for odds / EOD join.
+  /// Live Low/High Temp markets cache for odds / EOD join.
   final List<MarketEvent> markets;
 
-  /// Switch to Low Markets and expand this event id.
+  /// Switch to Low/High Temp and expand this event id.
   final ValueChanged<String>? onOpenMarket;
 
   @override

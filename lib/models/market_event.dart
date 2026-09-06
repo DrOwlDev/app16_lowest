@@ -6,6 +6,9 @@ import 'package:timezone/timezone.dart' as tz;
 import '../services/city_timezones.dart';
 import '../services/station_temperature_api.dart';
 
+/// Daily low vs daily high temperature Polymarket event.
+enum TempMarketKind { low, high }
+
 class OutcomeMarket {
   const OutcomeMarket({
     required this.id,
@@ -207,10 +210,18 @@ class MarketEvent {
 
   String get polymarketUrl => 'https://polymarket.com/event/$slug';
 
-  /// City extracted from titles like "Lowest temperature in Hong Kong on …".
+  /// Low vs high daily-temperature market (from title).
+  TempMarketKind get tempKind {
+    if (RegExp(r'Highest temperature', caseSensitive: false).hasMatch(title)) {
+      return TempMarketKind.high;
+    }
+    return TempMarketKind.low;
+  }
+
+  /// City from titles like "Lowest/Highest temperature in Hong Kong on …".
   String get cityName {
     final match = RegExp(
-      r'Lowest temperature in (.+?) on ',
+      r'(?:Lowest|Highest) temperature in (.+?) on ',
       caseSensitive: false,
     ).firstMatch(title);
     if (match != null) return match.group(1)!.trim();
