@@ -213,6 +213,13 @@ class StationTemperatureApi {
   static const openMeteoForecastDataSource = 'api.open-meteo.com';
   static const openMeteoNbmModel = 'ncep_nbm_conus';
 
+  /// Weather.com historical observations (same feed WU Daily Observations uses).
+  /// Used when aviationweather.gov METAR is empty (common for some CN ICAOs).
+  static const weatherComHistoricalBase =
+      'https://api.weather.com/v1/location';
+  /// Public key embedded in Weather Underground / weather.com web clients.
+  static const weatherComPublicApiKey = '6532d6454b8aa370768e63d6ba5a832e';
+
   final http.Client _client;
 
   Future<DailyTemperatureSeries> fetchDailySeries({
@@ -254,8 +261,31 @@ class StationTemperatureApi {
     );
 
     final station = await stationFuture;
-    final obsC = await obsFuture;
-    final latestObservation = await latestFuture;
+    var obsC = await obsFuture;
+    var latestObservation = await latestFuture;
+
+    // Some ICAOs (e.g. ZSJN) are listed in stationinfo but return no METARs
+    // from AWC; fall back to Weather.com historical (WU Daily Observations).
+    if (obsC.isEmpty) {
+      final country = station?.country ??
+          countryCodeFromWuHistoryUrl(observedDataSource);
+      if (country != null && country.isNotEmpty) {
+        final wu = await _fetchWuHistoricalObservationsC(
+          icao: icao,
+          country: country,
+          location: location,
+          dayStart: dayStart,
+          dayEnd: dayEnd,
+        );
+        obsC = wu.temps;
+        latestObservation ??= wu.latest == null
+            ? null
+            : LatestStationObservation(
+                temperature: convertTempC(wu.latest!.tempC, unitNorm),
+                observedAtLocal: wu.latest!.local,
+              );
+      }
+    }
 
     var forecastC = <int, double>{};
     var forecastSource = openMeteoForecastDataSource;
@@ -330,7 +360,9 @@ class StationTemperatureApi {
     }
   }
 
-  Future<({double lat, double lon})?> _fetchStation(String icao) async {
+  Future<({double lat, double lon, String? country})?> _fetchStation(
+    String icao,
+  ) async {
     final uri = Uri.parse(
       '$_aviationBase/stationinfo?ids=$icao&format=json',
     );
@@ -343,7 +375,69 @@ class StationTemperatureApi {
     final lat = (first['lat'] as num?)?.toDouble();
     final lon = (first['lon'] as num?)?.toDouble();
     if (lat == null || lon == null) return null;
-    return (lat: lat, lon: lon);
+    final country = first['country']?.toString().trim().toUpperCase();
+    return (
+      lat: lat,
+      lon: lon,
+      country: (country == null || country.isEmpty) ? null : country,
+    );
+  }
+
+  /// Weather.com / WU historical observations when AWC METAR is unavailable.
+  Future<
+      ({
+        Map<int, double> temps,
+        ({tz.TZDateTime local, double tempC})? latest,
+      })> _fetchWuHistoricalObservationsC({
+    required String icao,
+    required String country,
+    required tz.Location location,
+    required tz.TZDateTime dayStart,
+    required tz.TZDateTime dayEnd,
+  }) async {
+    final ymd =
+        '${dayStart.year.toString().padLeft(4, '0')}'
+        '${dayStart.month.toString().padLeft(2, '0')}'
+        '${dayStart.day.toString().padLeft(2, '0')}';
+    final locId = '$icao:9:${country.toUpperCase()}';
+    final uri = Uri.parse(
+      '$weatherComHistoricalBase/$locId/observations/historical.json'
+      '?apiKey=$weatherComPublicApiKey&units=m&startDate=$ymd&endDate=$ymd',
+    );
+    try {
+      final response = await _client.get(
+        uri,
+        headers: {
+          'User-Agent': _userAgent,
+          'Accept': 'application/json',
+        },
+      );
+      if (response.statusCode != 200) {
+        return (temps: <int, double>{}, latest: null);
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) {
+        return (temps: <int, double>{}, latest: null);
+      }
+      final samples = parseWeatherComHistoricalObservationsC(decoded);
+      final temps = indexMetarObservations(
+        location: location,
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        samples: samples,
+      );
+      ({tz.TZDateTime local, double tempC})? latest;
+      if (samples.isNotEmpty) {
+        final last = samples.last;
+        latest = (
+          local: tz.TZDateTime.from(last.utc.toUtc(), location),
+          tempC: last.tempC,
+        );
+      }
+      return (temps: temps, latest: latest);
+    } catch (_) {
+      return (temps: <int, double>{}, latest: null);
+    }
   }
 
   Future<Map<int, double>> _fetchMetarObservationsC({
@@ -560,6 +654,47 @@ class StationTemperatureApi {
   }
 
   void close() => _client.close();
+}
+
+/// Parse Weather.com historical JSON (`units=m`) into UTC samples (°C).
+List<({DateTime utc, double tempC})> parseWeatherComHistoricalObservationsC(
+  Map decoded,
+) {
+  final raw = decoded['observations'];
+  if (raw is! List) return const [];
+  final samples = <({DateTime utc, double tempC})>[];
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final temp = (item['temp'] as num?)?.toDouble();
+    if (temp == null) continue;
+    final validGmt = item['valid_time_gmt'];
+    if (validGmt is! num) continue;
+    final utc = DateTime.fromMillisecondsSinceEpoch(
+      (validGmt * 1000).round(),
+      isUtc: true,
+    );
+    samples.add((utc: utc, tempC: temp));
+  }
+  samples.sort((a, b) => a.utc.compareTo(b.utc));
+  return samples;
+}
+
+/// ISO country from WU path `/history/daily/{cc}/city/{ICAO}` (e.g. `CN`).
+String? countryCodeFromWuHistoryUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null) return null;
+  final host = uri.host.toLowerCase();
+  if (!host.contains('wunderground.com')) return null;
+  if (!uri.path.toLowerCase().contains('/history/daily/')) return null;
+  final segments = uri.pathSegments;
+  if (segments.length < 3) return null;
+  final lower = segments.map((s) => s.toLowerCase()).toList();
+  final dailyIdx = lower.indexOf('daily');
+  if (dailyIdx < 0 || dailyIdx + 1 >= segments.length) return null;
+  final cc = segments[dailyIdx + 1].trim();
+  if (!RegExp(r'^[A-Za-z]{2}$').hasMatch(cc)) return null;
+  return cc.toUpperCase();
 }
 
 /// Index METAR samples at native local resolution (minute precision).

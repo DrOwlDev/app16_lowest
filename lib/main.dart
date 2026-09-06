@@ -140,7 +140,7 @@ class _MarketListPageState extends State<MarketListPage> {
     });
     _load();
     _autoRefreshTimer = Timer.periodic(
-      const Duration(minutes: 1),
+      const Duration(minutes: 3),
       (_) {
         if (!mounted) return;
         _load(silent: true);
@@ -852,7 +852,10 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         ? _markets.where((m) => !m.isThinOutcomeRow).toList()
         : _markets;
     final resolutionOpenUrl = event.resolutionSourceOpenUrl;
-    final isStandardTimeseries = _timeseriesSiteId != null;
+    // WRH only — WU airport markets keep the Unique Resolution Source badge.
+    final isStandardTimeseries =
+        weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) != null ||
+            weatherGovTimeseriesSiteId(event.resolutionSourceUrl) != null;
 
     return Card(
       color: fill,

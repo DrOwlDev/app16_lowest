@@ -567,6 +567,10 @@ String? weatherUndergroundHistoryIcao(String? url) {
   return icao.toUpperCase();
 }
 
+/// ISO country from WU path — see [countryCodeFromWuHistoryUrl].
+String? weatherUndergroundHistoryCountry(String? url) =>
+    countryCodeFromWuHistoryUrl(url);
+
 /// ICAO for METAR/Open-Meteo charts (WRH site or WU history ICAO).
 ///
 /// Returns null for Hong Kong HKO markets (use [hongKongOcfStationId] instead).

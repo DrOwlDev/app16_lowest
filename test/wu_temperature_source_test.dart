@@ -172,4 +172,72 @@ void main() {
       expect(CityTimezones.locationForCity('Taipei')?.name, 'Asia/Taipei');
     });
   });
+
+  group('Weather.com historical fallback (ZSJN)', () {
+    test('country code from WU history URL', () {
+      expect(
+        countryCodeFromWuHistoryUrl(
+          'https://www.wunderground.com/history/daily/cn/jinan/ZSJN',
+        ),
+        'CN',
+      );
+      expect(
+        weatherUndergroundHistoryCountry(
+          'https://www.wunderground.com/history/daily/tw/taipei/RCSS',
+        ),
+        'TW',
+      );
+    });
+
+    test('parses historical JSON into Shanghai-local observed hours', () {
+      final shanghai = tz.getLocation('Asia/Shanghai');
+      final dayStart = tz.TZDateTime(shanghai, 2026, 9, 6);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      // 2026-09-05 16:00 UTC = Sep 6 00:00 CST; 21:00 UTC = Sep 6 05:00 CST
+      final samples = parseWeatherComHistoricalObservationsC({
+        'observations': [
+          {'valid_time_gmt': 1788624000, 'temp': 19},
+          {'valid_time_gmt': 1788642000, 'temp': 17},
+          {'valid_time_gmt': 1788663600, 'temp': 29},
+        ],
+      });
+      expect(samples, hasLength(3));
+      expect(samples[1].tempC, 17);
+
+      final indexed = indexMetarObservations(
+        location: shanghai,
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        samples: samples,
+      );
+      final at5 =
+          tz.TZDateTime(shanghai, 2026, 9, 6, 5).millisecondsSinceEpoch;
+      expect(indexed[at5], 17);
+
+      final now = tz.TZDateTime(shanghai, 2026, 9, 6, 11, 30);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: indexed,
+        forecastC: {
+          tz.TZDateTime(shanghai, 2026, 9, 6, 12).millisecondsSinceEpoch: 30,
+        },
+        unit: 'C',
+        observedDataSource:
+            'https://www.wunderground.com/history/daily/cn/jinan/ZSJN',
+        forecastDataSource:
+            StationTemperatureApi.openMeteoForecastDataSource,
+      );
+      expect(points.any((p) => p.kind == TempPointKind.observed), isTrue);
+      expect(
+        points.where((p) => p.kind == TempPointKind.observed).map((p) => p.temperature),
+        containsAll([19.0, 17.0, 29.0]),
+      );
+      expect(
+        points.where((p) => p.isDailyMinimum).map((p) => p.temperature).toSet(),
+        {17.0},
+      );
+    });
+  });
 }

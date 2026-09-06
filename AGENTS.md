@@ -2,7 +2,7 @@
 
 - Prefer a dense Windows UI: tighter spacing, smaller market heading fonts, and no top banners (e.g. remove "Low Temp Markets") that waste vertical space.
 - Avoid redundant labels; if a degree already shows its percentage (e.g. "14° 99%"), do not also show a separate "% Yes" style label; format top outcomes as "x% @ yC" (e.g. "70% @ 26C").
-- Always hide markets past local EOD (no toggle), sort by time-to-EOD, always auto-refresh every 1 minute (no checkbox), and show all active market dates (no date filter).
+- Always hide markets past local EOD (no toggle), sort by time-to-EOD, always auto-refresh every 3 minutes (no checkbox), and show all active market dates (no date filter).
 - No Min convergence or Min time-to-EOD filters (removed).
 - Outcome percentages and Buy Yes / Buy No must match Polymarket’s live display (including "-" / unavailable when Polymarket shows no odds); chance % is Polymarket’s large percentage—on wide bid-ask prefer mid over a stale last trade when Polymarket shows mid (e.g. 29% vs last 68%), not Buy Yes ask.
 - Accordion expand: only one market open at a time; no blue city badge; when expanded, show Buy Yes and Buy No; refresh that market’s odds on expand (and via a per-market refresh control).
@@ -17,7 +17,7 @@
 ## Learned Workspace Facts
 
 - This repo is a Flutter app (`app16_lowest`) for Polymarket low-temperature weather markets (`https://polymarket.com/weather/low-temperature`): Windows desktop uses live Gamma/CLOB; GitHub Pages web reads same-origin static `data/markets.json` (avoids browser CORS) with Actions refreshing that snapshot about every 5 minutes. The snapshot also preloads WRH, Weather Underground airport ICAO (e.g. Jinan ZSJN, Taipei RCSS), and Hong Kong HKO temperature series so expand charts/tables work without browser calls to weather APIs.
-- Manual Refresh and the 1-minute auto-refresh must reload markets and odds from Polymarket while preserving filters and the selected market (Windows live path).
+- Manual Refresh and the 3-minute auto-refresh must reload markets and odds from Polymarket while preserving filters and the selected market (Windows live path).
 - "Time to EOD" is hours and minutes until 23:59 in the market city’s local timezone—not market close/resolution time and not a stale calendar-day "EOD passed" when local evening still remains.
 - Temperature-outcome / chance stats must stay consistent with Polymarket’s site (wrong % or inventing a winner when Polymarket shows "-" is a bug); on wide spreads prefer mid when that matches Polymarket’s large %, over Buy Yes ask or a conflicting last trade alone.
 - Current Positions loads the Polymarket Data API for the configured public proxy wallet `0x8cEF3c1B592953D61EEE2bC9375C5944A8926B6d`.
@@ -25,6 +25,6 @@
 - Opening weather.gov WRH timeseries links for °C markets appends `&units=metric`; °F markets leave the URL unchanged.
 - Expanded Low Markets rows show a temperature chart for WRH timeseries sites, Weather Underground airport ICAO markets (METAR + Open-Meteo via `StationTemperatureApi`), and Hong Kong (HKO): observed before now, forecast after, city-local from 00:00 through next-day 00:00 inclusive; temperature table places Extreme to the right of Temp.
 - Hong Kong charts use `hkoc.csv` observed (minute resolution, HKT) + OCF `HKO.xml` forecast + latest 1-min CSV for the now-line label; settlement reference remains HKO Daily Extract Absolute temperatures (not scraped for the live curve).
-- Jinan/Taipei (and similar) settle on Weather Underground Daily Observations for airport ICAOs; charts use aviationweather.gov METAR for that ICAO as observed and Open-Meteo at airport lat/lon as forecast (NWS unavailable outside US)—do not route through HKO.
+- Jinan/Taipei (and similar) settle on Weather Underground Daily Observations for airport ICAOs; charts prefer aviationweather.gov METAR for that ICAO as observed, then Weather.com historical (same WU table) when AWC returns no METARs (e.g. ZSJN), plus Open-Meteo at airport lat/lon as forecast (NWS unavailable outside US)—do not route through HKO.
 - Forecast preference for WRH charts: `api.weather.gov` hourly first, then Open-Meteo NBM (`ncep_nbm_conus`) for US fallback, then default Open-Meteo as last resort / non-US.
 - WRH/HKO chart styling: observed temps black at native station resolution (sub-hourly when available); forecast temps yellow; blue min / orange max horizontal lines and stars with labels at full available decimal precision; red vertical now-line labeled with latest station observation temp and time when available.
