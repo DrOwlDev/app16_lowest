@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/market_event.dart';
 import '../models/user_position.dart';
 import '../services/polymarket_positions_api.dart';
+import '../ui/eod_badge_color.dart';
 
 /// Shows Polymarket positions for a fixed wallet address.
 class PositionsPage extends StatefulWidget {

@@ -14,6 +14,7 @@ import 'services/city_timezones.dart';
 import 'services/hko_temperature_api.dart';
 import 'services/polymarket_api.dart';
 import 'services/station_temperature_api.dart';
+import 'ui/eod_badge_color.dart';
 import 'widgets/daily_temperature_chart.dart';
 import 'widgets/settlement_bucket_hud.dart';
 
