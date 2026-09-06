@@ -68,6 +68,9 @@ class _MarketsPageState extends State<MarketsPage>
       if (c.cityName.toLowerCase().contains(query)) return true;
       final siteId = weatherGovTimeseriesSiteId(c.resolutionUrl);
       if (siteId != null && siteId.toLowerCase().contains(query)) return true;
+      final wuIcao = weatherUndergroundHistoryIcao(c.resolutionUrl) ??
+          weatherUndergroundHistoryIcao(c.openUrl);
+      if (wuIcao != null && wuIcao.toLowerCase().contains(query)) return true;
       return false;
     }).toList();
   }
@@ -289,10 +292,17 @@ class _MarketsPageState extends State<MarketsPage>
         final row = cities[index];
         final displayUrl = row.openUrl ?? row.resolutionUrl;
         final siteId = weatherGovTimeseriesSiteId(row.resolutionUrl);
+        final wuIcao = weatherUndergroundHistoryIcao(row.resolutionUrl) ??
+            weatherUndergroundHistoryIcao(row.openUrl);
         final isStandardTimeseries = siteId != null;
-        final titleText = isStandardTimeseries
-            ? '${row.cityName} - $siteId'
-            : row.cityName;
+        final String titleText;
+        if (isStandardTimeseries) {
+          titleText = '${row.cityName} - $siteId';
+        } else if (wuIcao != null) {
+          titleText = '${row.cityName} - $wuIcao';
+        } else {
+          titleText = row.cityName;
+        }
         return Card(
           child: ListTile(
             dense: true,

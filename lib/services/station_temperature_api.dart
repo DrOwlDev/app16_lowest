@@ -245,7 +245,7 @@ class StationTemperatureApi {
       location: location,
       dayStart: dayStart,
       dayEnd: dayEnd,
-      hours: hoursNeeded.clamp(24, 72),
+      hours: hoursNeeded.clamp(24, 96),
     );
     final latestFuture = _fetchNwsLatestObservation(
       icao: icao,

@@ -537,17 +537,46 @@ bool isHongKongTemperatureMarket(MarketEvent event) {
 
 /// True when this market can show an expand temperature chart.
 bool isChartableTemperatureSource(MarketEvent event) {
-  if (weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) != null ||
-      weatherGovTimeseriesSiteId(event.resolutionSourceUrl) != null) {
-    return true;
-  }
-  return isHongKongTemperatureMarket(event);
+  if (isHongKongTemperatureMarket(event)) return true;
+  return metarStationIcaoForEvent(event) != null;
 }
 
 /// HKO OCF station id when [event] is a Hong Kong chartable market.
 String? hongKongOcfStationId(MarketEvent event) {
   if (!isHongKongTemperatureMarket(event)) return null;
   return 'HKO';
+}
+
+/// True when [url] is a Weather Underground daily airport history page.
+bool isWeatherUndergroundHistoryUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  final host = uri.host.toLowerCase();
+  if (!host.contains('wunderground.com')) return false;
+  return uri.path.toLowerCase().contains('/history/daily/');
+}
+
+/// ICAO from WU path like `/history/daily/cn/jinan/ZSJN`, or null.
+String? weatherUndergroundHistoryIcao(String? url) {
+  if (url == null || url.isEmpty) return null;
+  if (!isWeatherUndergroundHistoryUrl(url)) return null;
+  final segments = Uri.tryParse(url)?.pathSegments;
+  if (segments == null || segments.isEmpty) return null;
+  final icao = segments.last.trim();
+  if (!RegExp(r'^[A-Za-z]{4}$').hasMatch(icao)) return null;
+  return icao.toUpperCase();
+}
+
+/// ICAO for METAR/Open-Meteo charts (WRH site or WU history ICAO).
+///
+/// Returns null for Hong Kong HKO markets (use [hongKongOcfStationId] instead).
+String? metarStationIcaoForEvent(MarketEvent event) {
+  if (isHongKongTemperatureMarket(event)) return null;
+  final wrh = weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) ??
+      weatherGovTimeseriesSiteId(event.resolutionSourceUrl);
+  if (wrh != null && wrh.isNotEmpty) return wrh.toUpperCase();
+  return weatherUndergroundHistoryIcao(event.resolutionSourceOpenUrl) ??
+      weatherUndergroundHistoryIcao(event.resolutionSourceUrl);
 }
 
 /// Formats a displayed chance as Polymarket-style percent, or "—".

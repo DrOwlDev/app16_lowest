@@ -64,6 +64,7 @@ void main() {
       expect(isHongKongTemperatureMarket(event), isFalse);
       expect(hongKongOcfStationId(event), isNull);
       expect(isChartableTemperatureSource(event), isTrue);
+      expect(metarStationIcaoForEvent(event), 'KDAL');
     });
   });
 

@@ -10,8 +10,8 @@ import 'package:app16_lowest/services/station_temperature_api.dart';
 /// Fetches live Polymarket low-temp markets (+ CLOB asks) and writes
 /// `web/data/markets.json` for GitHub Pages.
 ///
-/// Also preloads WRH + HKO temperature series so the web app can render
-/// charts without browser CORS to weather APIs.
+/// Also preloads WRH + WU-ICAO + HKO temperature series so the web app can
+/// render charts without browser CORS to weather APIs.
 Future<void> main(List<String> args) async {
   CityTimezones.ensureInitialized();
 
@@ -26,7 +26,7 @@ Future<void> main(List<String> args) async {
   events = await api.enrichEventsBuyPrices(events);
   api.close();
 
-  stdout.writeln('Preloading temperature series (WRH + HKO)…');
+  stdout.writeln('Preloading temperature series (WRH + WU + HKO)…');
   events = await _attachTemperatureSeries(events, tempApi, hkoApi);
   tempApi.close();
   hkoApi.close();
@@ -71,15 +71,13 @@ Future<List<MarketEvent>> _attachTemperatureSeries(
     final observedSource =
         event.resolutionSourceUrl ?? event.resolutionSourceOpenUrl;
     final hkoStation = hongKongOcfStationId(event);
-    final siteId =
-        weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) ??
-            weatherGovTimeseriesSiteId(event.resolutionSourceUrl);
+    final siteId = metarStationIcaoForEvent(event);
 
     final String key;
     if (hkoStation != null) {
       key = '$hkoStation|${day.year}-${day.month}-${day.day}|$unit';
     } else if (siteId != null) {
-      key = '${siteId.toUpperCase()}|${day.year}-${day.month}-${day.day}|$unit';
+      key = '$siteId|${day.year}-${day.month}-${day.day}|$unit';
     } else {
       return Future<DailyTemperatureSeries?>.value(null);
     }

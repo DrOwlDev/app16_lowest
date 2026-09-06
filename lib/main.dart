@@ -671,9 +671,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
   DailyTemperatureSeries? _tempSeries;
   String? _tempError;
 
-  String? get _timeseriesSiteId =>
-      weatherGovTimeseriesSiteId(widget.event.resolutionSourceOpenUrl) ??
-      weatherGovTimeseriesSiteId(widget.event.resolutionSourceUrl);
+  String? get _metarStationIcao => metarStationIcaoForEvent(widget.event);
 
   bool get _isHongKongChart =>
       hongKongOcfStationId(widget.event) != null;
@@ -809,9 +807,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
           observedDataSource: observedSource,
         );
       } else {
-        final siteId = _timeseriesSiteId;
+        final siteId = _metarStationIcao;
         if (siteId == null) {
-          throw StateError('Missing WRH site id');
+          throw StateError('Missing METAR station id');
         }
         series = await _tempApi.fetchDailySeries(
           siteId: siteId,
