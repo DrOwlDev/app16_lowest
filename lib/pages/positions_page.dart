@@ -1,15 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/market_event.dart';
 import '../models/user_position.dart';
 import '../services/polymarket_positions_api.dart';
 
 /// Shows Polymarket positions for a fixed wallet address.
 class PositionsPage extends StatefulWidget {
-  const PositionsPage({super.key});
+  const PositionsPage({
+    super.key,
+    this.markets = const [],
+    this.onOpenMarket,
+  });
 
   static const userId = PolymarketPositionsApi.defaultUserId;
+
+  /// Live Low Markets cache for odds / EOD join.
+  final List<MarketEvent> markets;
+
+  /// Switch to Low Markets and expand this event id.
+  final ValueChanged<String>? onOpenMarket;
 
   @override
   State<PositionsPage> createState() => _PositionsPageState();
@@ -27,6 +40,7 @@ class _PositionsPageState extends State<PositionsPage>
   bool _refreshing = false;
   String? _error;
   DateTime? _lastRefreshedAt;
+  Timer? _autoRefreshTimer;
 
   @override
   bool get wantKeepAlive => true;
@@ -35,10 +49,18 @@ class _PositionsPageState extends State<PositionsPage>
   void initState() {
     super.initState();
     _load();
+    _autoRefreshTimer = Timer.periodic(
+      const Duration(minutes: 3),
+      (_) {
+        if (!mounted) return;
+        _load(silent: true);
+      },
+    );
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _api.close();
     super.dispose();
   }
@@ -80,6 +102,27 @@ class _PositionsPageState extends State<PositionsPage>
         SnackBar(content: Text('Could not open $url')),
       );
     }
+  }
+
+  ({MarketEvent event, OutcomeMarket? outcome})? _match(UserPosition p) {
+    final slug = p.eventSlug.isNotEmpty ? p.eventSlug : p.slug;
+    if (slug.isEmpty) return null;
+    MarketEvent? event;
+    for (final e in widget.markets) {
+      if (e.slug == slug) {
+        event = e;
+        break;
+      }
+    }
+    if (event == null) return null;
+    OutcomeMarket? outcome;
+    for (final m in event.markets) {
+      if (m.yesTokenId == p.asset || m.noTokenId == p.asset) {
+        outcome = m;
+        break;
+      }
+    }
+    return (event: event, outcome: outcome);
   }
 
   double get _totalValue =>
@@ -203,12 +246,27 @@ class _PositionsPageState extends State<PositionsPage>
       separatorBuilder: (_, _) => const SizedBox(height: 6),
       itemBuilder: (context, index) {
         final p = _positions[index];
+        final matched = _match(p);
+        final event = matched?.event;
+        final outcome = matched?.outcome;
+        final remaining = event?.timeToLocalEndOfDay;
+        final eodLabel = formatTimeToEndOfDay(remaining);
+        final chance = outcome?.displayChance ??
+            (p.curPrice > 0 && p.curPrice < 1 ? p.curPrice : null);
+        final chanceLabel = formatChancePercent(chance);
         final pnlColor = p.cashPnl >= 0
             ? const Color(0xFF15803D)
             : const Color(0xFFBE185D);
+
         return Card(
           child: InkWell(
-            onTap: () => _openUrl(p.polymarketEventUrl),
+            onTap: () {
+              if (event != null && widget.onOpenMarket != null) {
+                widget.onOpenMarket!(event.id);
+              } else {
+                _openUrl(p.polymarketEventUrl);
+              }
+            },
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
               child: Column(
@@ -227,10 +285,20 @@ class _PositionsPageState extends State<PositionsPage>
                           ),
                         ),
                       ),
-                      Icon(
-                        Icons.open_in_new,
-                        size: 14,
-                        color: scheme.primary,
+                      IconButton(
+                        tooltip: 'Open on Polymarket',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: () => _openUrl(p.polymarketEventUrl),
+                        icon: Icon(
+                          Icons.open_in_new,
+                          size: 14,
+                          color: scheme.primary,
+                        ),
                       ),
                     ],
                   ),
@@ -245,10 +313,21 @@ class _PositionsPageState extends State<PositionsPage>
                             ? const Color(0xFF15803D)
                             : const Color(0xFFBE185D),
                       ),
+                      if (outcome != null)
+                        _chip(
+                          outcome.displayLabel,
+                          const Color(0xFF475569),
+                        ),
+                      _chip(
+                        chanceLabel,
+                        const Color(0xFF0F766E),
+                      ),
+                      _chip(
+                        eodLabel,
+                        eodBadgeColor(remaining),
+                      ),
                       if (p.redeemable)
                         _chip('Redeemable', const Color(0xFFB45309)),
-                      if (p.endDate != null)
-                        _chip(p.endDate!, const Color(0xFF7C3AED)),
                     ],
                   ),
                   const SizedBox(height: 6),

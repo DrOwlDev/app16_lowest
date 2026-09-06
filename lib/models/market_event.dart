@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show Color;
 
 import 'package:timezone/timezone.dart' as tz;
 
@@ -617,6 +618,16 @@ String formatTimeToEndOfDay(Duration? remaining) {
   if (remaining.inHours > 0) return '${remaining.inHours}h ${minutes}m';
   if (minutes > 0) return '${minutes}m';
   return '<1m';
+}
+
+/// EOD badge color: red &lt;1h, orange &lt;3h, else blue (gray if passed/unknown).
+Color eodBadgeColor(Duration? remaining) {
+  if (remaining == null || remaining.isNegative) {
+    return const Color(0xFF64748B);
+  }
+  if (remaining.inMinutes < 60) return const Color(0xFFDC2626);
+  if (remaining.inMinutes < 3 * 60) return const Color(0xFFB45309);
+  return const Color(0xFF2563EB);
 }
 
 bool _isZeroOrMissing(double? price) {

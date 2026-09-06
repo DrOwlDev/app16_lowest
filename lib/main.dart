@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'models/market_alert.dart';
 import 'models/market_event.dart';
+import 'models/temp_outcome_bucket.dart';
 import 'pages/markets_page.dart';
 import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
@@ -13,6 +15,7 @@ import 'services/hko_temperature_api.dart';
 import 'services/polymarket_api.dart';
 import 'services/station_temperature_api.dart';
 import 'widgets/daily_temperature_chart.dart';
+import 'widgets/settlement_bucket_hud.dart';
 
 void main() {
   CityTimezones.ensureInitialized();
@@ -50,52 +53,92 @@ class LowTempApp extends StatelessWidget {
   }
 }
 
-class HomeShell extends StatelessWidget {
+class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
+
+  @override
+  State<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends State<HomeShell> {
+  List<MarketEvent> _marketsCache = const [];
+  String? _pendingExpandEventId;
+
+  void _onEventsChanged(List<MarketEvent> events) {
+    setState(() => _marketsCache = events);
+  }
+
+  void _onPendingExpandConsumed() {
+    if (_pendingExpandEventId == null) return;
+    setState(() => _pendingExpandEventId = null);
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return DefaultTabController(
       length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          toolbarHeight: 0,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          bottom: TabBar(
-            labelColor: scheme.primary,
-            unselectedLabelColor: scheme.onSurfaceVariant,
-            indicatorColor: scheme.primary,
-            labelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+      child: Builder(
+        builder: (tabContext) {
+          return Scaffold(
+            appBar: AppBar(
+              toolbarHeight: 0,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+              bottom: TabBar(
+                labelColor: scheme.primary,
+                unselectedLabelColor: scheme.onSurfaceVariant,
+                indicatorColor: scheme.primary,
+                labelStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                tabs: const [
+                  Tab(text: 'Low Markets'),
+                  Tab(text: 'Sites'),
+                  Tab(text: 'Current Positions'),
+                ],
+              ),
             ),
-            tabs: const [
-              Tab(text: 'Low Markets'),
-              Tab(text: 'Sites'),
-              Tab(text: 'Current Positions'),
-            ],
-          ),
-        ),
-        body: const SafeArea(
-          top: false,
-          child: TabBarView(
-            children: [
-              MarketListPage(),
-              MarketsPage(),
-              PositionsPage(),
-            ],
-          ),
-        ),
+            body: SafeArea(
+              top: false,
+              child: TabBarView(
+                children: [
+                  MarketListPage(
+                    onEventsChanged: _onEventsChanged,
+                    pendingExpandEventId: _pendingExpandEventId,
+                    onPendingExpandConsumed: _onPendingExpandConsumed,
+                  ),
+                  const MarketsPage(),
+                  PositionsPage(
+                    markets: _marketsCache,
+                    onOpenMarket: (eventId) {
+                      setState(() => _pendingExpandEventId = eventId);
+                      DefaultTabController.of(tabContext).animateTo(0);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
 class MarketListPage extends StatefulWidget {
-  const MarketListPage({super.key});
+  const MarketListPage({
+    super.key,
+    this.onEventsChanged,
+    this.pendingExpandEventId,
+    this.onPendingExpandConsumed,
+  });
+
+  final ValueChanged<List<MarketEvent>>? onEventsChanged;
+  final String? pendingExpandEventId;
+  final VoidCallback? onPendingExpandConsumed;
 
   @override
   State<MarketListPage> createState() => _MarketListPageState();
@@ -131,6 +174,11 @@ class _MarketListPageState extends State<MarketListPage> {
   /// Hide temp-table rows that are neither daily Min nor Max. On by default.
   bool _hideNonExtremeTempRows = true;
 
+  final List<MarketAlert> _alertLog = [];
+  final Map<String, double> _prevObsMinByEventId = {};
+  Set<String> _prevLockedIds = {};
+  final Map<String, DateTime> _alertDedupeAt = {};
+
   @override
   void initState() {
     super.initState();
@@ -149,12 +197,96 @@ class _MarketListPageState extends State<MarketListPage> {
   }
 
   @override
+  void didUpdateWidget(covariant MarketListPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pending = widget.pendingExpandEventId;
+    if (pending != null && pending != oldWidget.pendingExpandEventId) {
+      setState(() => _expandedEventId = pending);
+      widget.onPendingExpandConsumed?.call();
+    }
+  }
+
+  @override
   void dispose() {
     _autoRefreshTimer?.cancel();
     _countdownTimer?.cancel();
     _searchController.dispose();
     _api.close();
     super.dispose();
+  }
+
+  void _pushAlert(MarketAlert alert) {
+    final key = '${alert.eventId}|${alert.kind.name}';
+    final last = _alertDedupeAt[key];
+    final now = DateTime.now();
+    if (last != null && now.difference(last) < const Duration(seconds: 60)) {
+      return;
+    }
+    _alertDedupeAt[key] = now;
+    setState(() {
+      _alertLog.insert(0, alert);
+      if (_alertLog.length > 20) {
+        _alertLog.removeRange(20, _alertLog.length);
+      }
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(alert.message, style: const TextStyle(fontSize: 12)),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _onObservedMin(MarketEvent event, double? obsMin) {
+    if (obsMin == null) return;
+    final prev = _prevObsMinByEventId[event.id];
+    _prevObsMinByEventId[event.id] = obsMin;
+    if (prev != null && obsMin < prev - 1e-9) {
+      final unit = event.temperatureUnit ?? 'C';
+      _pushAlert(
+        MarketAlert(
+          at: DateTime.now(),
+          kind: MarketAlertKind.obsMinDrop,
+          eventId: event.id,
+          title: event.title,
+          message:
+              '${event.cityName}: obs min ${formatTempOneDecimal(prev)} → '
+              '${formatTempOneDecimal(obsMin)}°$unit',
+        ),
+      );
+    }
+  }
+
+  void _detectNewLockAlerts(List<MarketEvent> events) {
+    final locked = <String>{};
+    for (final e in events) {
+      if (e.matchesLockedMarketWithNos) locked.add(e.id);
+    }
+    final isInitial = _prevLockedIds.isEmpty && _events.isEmpty;
+    if (!isInitial) {
+      for (final id in locked) {
+        if (_prevLockedIds.contains(id)) continue;
+        MarketEvent? event;
+        for (final e in events) {
+          if (e.id == id) {
+            event = e;
+            break;
+          }
+        }
+        if (event == null) continue;
+        _pushAlert(
+          MarketAlert(
+            at: DateTime.now(),
+            kind: MarketAlertKind.lockWithNos,
+            eventId: event.id,
+            title: event.title,
+            message: '${event.title}: lock ≥90% with No opportunity',
+          ),
+        );
+      }
+    }
+    _prevLockedIds = locked;
   }
 
   /// Reloads all markets/odds from Polymarket. Preserves search and
@@ -177,6 +309,7 @@ class _MarketListPageState extends State<MarketListPage> {
       }
       if (!mounted) return;
 
+      _detectNewLockAlerts(events);
       setState(() {
         _events = events;
         _loading = false;
@@ -184,6 +317,7 @@ class _MarketListPageState extends State<MarketListPage> {
         _refreshGeneration++;
         _lastRefreshedAt = DateTime.now();
       });
+      widget.onEventsChanged?.call(events);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -211,6 +345,8 @@ class _MarketListPageState extends State<MarketListPage> {
           _refreshing = false;
           _refreshGeneration++;
         });
+        widget.onEventsChanged?.call(events);
+        _detectNewLockAlerts(events);
       } catch (e) {
         if (!mounted) return;
         setState(() {
@@ -482,8 +618,63 @@ class _MarketListPageState extends State<MarketListPage> {
             ],
           ),
         ),
+        if (_alertLog.isNotEmpty) _buildAlertStrip(),
         Expanded(child: _buildBody(filtered)),
       ],
+    );
+  }
+
+  Widget _buildAlertStrip() {
+    final latest = _alertLog.take(3).toList();
+    return Material(
+      color: const Color(0xFFFFF7ED),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(Icons.notifications_active, size: 16, color: Color(0xFFB45309)),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final a in latest)
+                    InkWell(
+                      onTap: () => setState(() => _expandedEventId = a.eventId),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 1),
+                        child: Text(
+                          a.message,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF9A3412),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _alertLog.clear()),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Clear', style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -546,6 +737,7 @@ class _MarketListPageState extends State<MarketListPage> {
                 _expandedEventId = expanded ? event.id : null;
               });
             },
+            onObservedMin: (min) => _onObservedMin(event, min),
             onOpen: () => _openUrl(event.polymarketUrl),
             onOpenResolution: () {
               final url = event.resolutionSourceOpenUrl;
@@ -580,14 +772,7 @@ Color _dateBadgeColor(DateTime day) {
   return _dateBadgePalette[days.abs() % _dateBadgePalette.length];
 }
 
-Color _eodBadgeColor(Duration? remaining) {
-  if (remaining == null || remaining.isNegative) {
-    return const Color(0xFF64748B);
-  }
-  if (remaining.inMinutes < 60) return const Color(0xFFDC2626);
-  if (remaining.inMinutes < 3 * 60) return const Color(0xFFB45309);
-  return const Color(0xFF2563EB);
-}
+Color _eodBadgeColor(Duration? remaining) => eodBadgeColor(remaining);
 
 /// Row fill from highest outcome chance: ≥95% green, ≥90% yellow, else white.
 Color _marketConvergenceFill(double? maxChance) {
@@ -637,6 +822,7 @@ class _MarketEventTile extends StatefulWidget {
     required this.hideThinOutcomes,
     required this.hideNonExtremeTempRows,
     required this.onExpansionChanged,
+    required this.onObservedMin,
     required this.onOpen,
     required this.onOpenResolution,
     this.onOpenHkoPortal,
@@ -651,6 +837,7 @@ class _MarketEventTile extends StatefulWidget {
   final bool hideThinOutcomes;
   final bool hideNonExtremeTempRows;
   final ValueChanged<bool> onExpansionChanged;
+  final ValueChanged<double?> onObservedMin;
   final VoidCallback onOpen;
   final VoidCallback onOpenResolution;
   final VoidCallback? onOpenHkoPortal;
@@ -787,6 +974,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         _tempLoaded = true;
         _loadingTemp = false;
       });
+      widget.onObservedMin(
+        preloaded == null ? null : seriesObservedMin(preloaded),
+      );
       return;
     }
 
@@ -827,6 +1017,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
         _tempLoaded = true;
         _loadingTemp = false;
       });
+      widget.onObservedMin(seriesObservedMin(series));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -856,6 +1047,8 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     final isStandardTimeseries =
         weatherGovTimeseriesSiteId(event.resolutionSourceOpenUrl) != null ||
             weatherGovTimeseriesSiteId(event.resolutionSourceUrl) != null;
+    final observedMin =
+        _tempSeries == null ? null : seriesObservedMin(_tempSeries!);
 
     return Card(
       color: fill,
@@ -982,7 +1175,14 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                     ...visible.map((market) => _OutcomeBuyRow(
                           market: market,
                           volumeFormat: widget.volumeFormat,
+                          isDead: observedMin != null &&
+                              outcomeMarketIsPhysicsDead(market, observedMin),
                         )),
+                  if (_tempSeries != null)
+                    SettlementBucketHud(
+                      series: _tempSeries!,
+                      markets: _markets,
+                    ),
                   if (_showTemperatureChart) ...[
                     const Divider(height: 1),
                     ColoredBox(
@@ -1029,22 +1229,29 @@ class _OutcomeBuyRow extends StatelessWidget {
   const _OutcomeBuyRow({
     required this.market,
     required this.volumeFormat,
+    this.isDead = false,
   });
 
   final OutcomeMarket market;
   final NumberFormat volumeFormat;
+  final bool isDead;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final chance = market.displayChance;
     final pct = formatChancePercent(chance);
-    final rowAccent = _topOutcomeChipAccent(chance);
+    final rowAccent = isDead
+        ? const Color(0xFF94A3B8)
+        : _topOutcomeChipAccent(chance);
     final buyYes = formatBuyCents(market.buyYesPrice);
     final buyNo = formatBuyCents(market.buyNoPrice);
+    final fill = isDead
+        ? const Color(0xFFF1F5F9)
+        : _topOutcomeChipFill(chance);
 
     return Container(
-      color: _topOutcomeChipFill(chance),
+      color: fill,
       padding: const EdgeInsets.fromLTRB(8, 3, 8, 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1062,14 +1269,44 @@ class _OutcomeBuyRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  market.displayLabel,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    height: 1.1,
-                    color: rowAccent,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        market.displayLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          height: 1.1,
+                          color: rowAccent,
+                          decoration:
+                              isDead ? TextDecoration.lineThrough : null,
+                          decorationColor: rowAccent,
+                        ),
+                      ),
+                    ),
+                    if (isDead) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Dead',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   '${volumeFormat.format(market.volume)} Vol.',

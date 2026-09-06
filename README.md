@@ -88,6 +88,15 @@ Shown when the market is **chartable** (see [Resolution sources](#resolution-sou
 - Blue min / orange max lines + stars (full decimal precision from series).
 - Red **now** line; label uses latest station obs temp/time when available.
 - Table: Extreme column next to Temp; optional Min/Max row filter above.
+- **Settlement HUD** (when series loaded): Obs min, Fcst rem, Leading bucket; warmer exact/range outcomes that can no longer win are marked **Dead** (physics: final low can only stay or fall).
+- **In-app alerts** (SnackBar + dismissible strip): new lower obs min on an expanded chart; newly appearing lock-with-No (≥90% + No opportunity) after refresh.
+
+### Current Positions
+
+- Joins to Low Markets cache by `eventSlug`/`slug` and CLOB `asset` → token ids.
+- Chips: outcome label, live **chance** (`displayChance`, else Data API mark), city-local **EOD**.
+- Tap row → Low Markets tab and expand that event; external Polymarket icon still available.
+- Auto-refresh every 3 minutes.
 
 ---
 
@@ -125,23 +134,18 @@ Notes:
 
 ---
 
-## Current Positions
-
-Loads Polymarket Data API for the configured public proxy wallet
-`0x8cEF3c1B592953D61EEE2bC9375C5944A8926B6d`.
-
----
-
 ## Key files
 
 | Path | Role |
 |---|---|
-| `lib/main.dart` | Low Markets UI, filters, 3‑min refresh, expand + chart routing |
+| `lib/main.dart` | Low Markets UI, filters, alerts, 3‑min refresh, expand + chart routing |
+| `lib/models/temp_outcome_bucket.dart` | Settlement bucket parse + physics-dead outcomes |
 | `lib/models/market_event.dart` | Odds/chance, strategies, EOD, chart eligibility (WRH / WU / HKO) |
 | `lib/services/station_temperature_api.dart` | METAR + forecast cascade + Weather.com historical fallback |
 | `lib/services/hko_temperature_api.dart` | Hong Kong observed + OCF |
 | `lib/pages/markets_page.dart` | Sites directory |
-| `lib/pages/positions_page.dart` | Positions |
+| `lib/pages/positions_page.dart` | Positions + live odds/EOD + deep-link |
+| `lib/widgets/settlement_bucket_hud.dart` | Settlement HUD strip |
 | `tool/export_markets.dart` | Pages snapshot exporter |
 | `.github/workflows/refresh-data.yml` | ~5‑min snapshot refresh |
 
