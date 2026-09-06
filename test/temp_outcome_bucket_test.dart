@@ -190,6 +190,43 @@ void main() {
         24,
       );
     });
+
+    test('forecast-only series has no Obs min/max even if daily-min flagged', () {
+      final loc = tz.getLocation('Asia/Seoul');
+      final dayStart = tz.TZDateTime(loc, 2026, 9, 7);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final now = tz.TZDateTime(loc, 2026, 9, 7, 0, 30);
+      final series = DailyTemperatureSeries(
+        siteId: 'RKPK',
+        unit: 'C',
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        points: [
+          HourlyTempPoint(
+            localHourStart: tz.TZDateTime(loc, 2026, 9, 7, 0),
+            temperature: 24,
+            kind: TempPointKind.forecast,
+          ),
+          HourlyTempPoint(
+            localHourStart: tz.TZDateTime(loc, 2026, 9, 7, 23),
+            temperature: 22.1,
+            kind: TempPointKind.forecast,
+            isDailyMinimum: true,
+          ),
+          HourlyTempPoint(
+            localHourStart: tz.TZDateTime(loc, 2026, 9, 7, 13),
+            temperature: 27.5,
+            kind: TempPointKind.forecast,
+            isDailyMaximum: true,
+          ),
+        ],
+      );
+      expect(seriesObservedMin(series), isNull);
+      expect(seriesObservedMax(series), isNull);
+      expect(seriesObservedExtremum(series, TempMarketKind.low), isNull);
+      expect(seriesForecastRemainingMin(series), 22.1);
+    });
   });
 
   group('MarketEvent tempKind and cityName', () {

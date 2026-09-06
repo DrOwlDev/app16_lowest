@@ -150,6 +150,12 @@ enum _ListStrategy {
   buyYesGe95,
 }
 
+enum _MarketTypeFilter {
+  low,
+  high,
+  both,
+}
+
 class _MarketListPageState extends State<MarketListPage> {
   final PolymarketApi _api = PolymarketApi(preferStaticSnapshot: kIsWeb);
   final TextEditingController _searchController = TextEditingController();
@@ -169,6 +175,7 @@ class _MarketListPageState extends State<MarketListPage> {
   Timer? _countdownTimer;
   String? _expandedEventId;
   _ListStrategy _strategy = _ListStrategy.lockedWithNos;
+  _MarketTypeFilter _marketType = _MarketTypeFilter.both;
   /// Hide thin temperature rows (Yes&lt;1¢ & No --). On by default.
   bool _hideThinOutcomes = true;
   /// Hide temp-table rows that are neither daily Min nor Max. On by default.
@@ -368,6 +375,14 @@ class _MarketListPageState extends State<MarketListPage> {
     final list = _events.where((event) {
       final remaining = event.timeToLocalEndOfDay;
       if (remaining == null || remaining.isNegative) return false;
+      if (_marketType == _MarketTypeFilter.low &&
+          event.tempKind != TempMarketKind.low) {
+        return false;
+      }
+      if (_marketType == _MarketTypeFilter.high &&
+          event.tempKind != TempMarketKind.high) {
+        return false;
+      }
       if (_strategy == _ListStrategy.lockedWithNos &&
           !event.matchesLockedMarketWithNos) {
         return false;
@@ -429,6 +444,67 @@ class _MarketListPageState extends State<MarketListPage> {
           padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
           child: Column(
             children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      'Type',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<_MarketTypeFilter>(
+                          value: _marketType,
+                          isDense: true,
+                          isExpanded: true,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurface,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: _MarketTypeFilter.low,
+                              child: Text('Low'),
+                            ),
+                            DropdownMenuItem(
+                              value: _MarketTypeFilter.high,
+                              child: Text('High'),
+                            ),
+                            DropdownMenuItem(
+                              value: _MarketTypeFilter.both,
+                              child: Text('Low & High'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null || value == _marketType) return;
+                            setState(() => _marketType = value);
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   SizedBox(

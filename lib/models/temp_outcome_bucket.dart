@@ -114,7 +114,7 @@ TempOutcomeBucket? parseTempOutcomeBucket(String label) {
   return null;
 }
 
-/// Min among observed points before dayEnd; falls back to daily-min flag.
+/// Min among observed points before dayEnd. No forecast fallback.
 double? seriesObservedMin(DailyTemperatureSeries series) {
   double? minTemp;
   for (final p in series.points) {
@@ -124,14 +124,10 @@ double? seriesObservedMin(DailyTemperatureSeries series) {
       minTemp = p.temperature;
     }
   }
-  if (minTemp != null) return minTemp;
-  for (final p in series.points) {
-    if (p.isDailyMinimum) return p.temperature;
-  }
-  return null;
+  return minTemp;
 }
 
-/// Max among observed points; falls back to daily-max flag.
+/// Max among observed points. No forecast fallback.
 double? seriesObservedMax(DailyTemperatureSeries series) {
   double? maxTemp;
   for (final p in series.points) {
@@ -141,11 +137,7 @@ double? seriesObservedMax(DailyTemperatureSeries series) {
       maxTemp = p.temperature;
     }
   }
-  if (maxTemp != null) return maxTemp;
-  for (final p in series.points) {
-    if (p.isDailyMaximum) return p.temperature;
-  }
-  return null;
+  return maxTemp;
 }
 
 double? seriesObservedExtremum(
