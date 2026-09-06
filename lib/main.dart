@@ -176,7 +176,7 @@ class _MarketListPageState extends State<MarketListPage> {
   Timer? _countdownTimer;
   String? _expandedEventId;
   _ListStrategy _strategy = _ListStrategy.lockedWithNos;
-  _MarketTypeFilter _marketType = _MarketTypeFilter.both;
+  _MarketTypeFilter _marketType = _MarketTypeFilter.low;
   /// Hide thin temperature rows (Yes&lt;1¢ & No --). On by default.
   bool _hideThinOutcomes = true;
   /// Hide temp-table rows that are neither daily Min nor Max. On by default.
@@ -600,6 +600,30 @@ class _MarketListPageState extends State<MarketListPage> {
                           vertical: 8,
                         ),
                       ),
+                    ),
+                  ),
+                  Checkbox(
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    value: _searchController.text.trim().toLowerCase() ==
+                        'hong kong',
+                    onChanged: (value) {
+                      if (value ?? false) {
+                        _searchController.text = 'Hong Kong';
+                        _searchController.selection =
+                            TextSelection.collapsed(
+                          offset: _searchController.text.length,
+                        );
+                      } else {
+                        _searchController.clear();
+                      }
+                    },
+                  ),
+                  const Text(
+                    'HKO',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -1274,6 +1298,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                     ...visible.map((market) => _OutcomeBuyRow(
                           market: market,
                           volumeFormat: widget.volumeFormat,
+                          tempKind: event.tempKind,
                           isDead: observedExtremum != null &&
                               outcomeMarketIsPhysicsDead(
                                 market,
@@ -1333,11 +1358,13 @@ class _OutcomeBuyRow extends StatelessWidget {
   const _OutcomeBuyRow({
     required this.market,
     required this.volumeFormat,
+    required this.tempKind,
     this.isDead = false,
   });
 
   final OutcomeMarket market;
   final NumberFormat volumeFormat;
+  final TempMarketKind tempKind;
   final bool isDead;
 
   @override
@@ -1353,6 +1380,11 @@ class _OutcomeBuyRow extends StatelessWidget {
     final fill = isDead
         ? const Color(0xFFF1F5F9)
         : _topOutcomeChipFill(chance);
+    final eliminatedTooltip = tempKind == TempMarketKind.high
+        ? 'Eliminated: the observed maximum already exceeds this colder '
+            'outcome, so it can no longer win settlement.'
+        : 'Eliminated: the observed minimum is already colder than this '
+            'warmer outcome, so it can no longer win settlement.';
 
     return Container(
       color: fill,
@@ -1391,21 +1423,25 @@ class _OutcomeBuyRow extends StatelessWidget {
                     ),
                     if (isDead) ...[
                       const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE2E8F0),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Dead',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF64748B),
+                      Tooltip(
+                        message: eliminatedTooltip,
+                        waitDuration: const Duration(milliseconds: 400),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Eliminated',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
                         ),
                       ),

@@ -65,7 +65,7 @@ UI defaults: white scaffold/cards; dense layout (no wasteful top banners). Each 
 - **Auto-refresh every 3 minutes** (silent; preserves search, strategy, type filter, expanded row). Manual Refresh does the same. EOD countdown UI ticks every 30s.
 - Only **one** accordion open at a time. Expanding a row reloads that market’s Buy Yes/No; per-row refresh control available.
 
-### Type filter (default: Low & High)
+### Type filter (default: Low)
 
 | Type | Rule |
 |---|---|
