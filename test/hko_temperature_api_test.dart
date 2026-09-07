@@ -98,9 +98,17 @@ Date/Time,Temperature,RH
               'ForecastWeather': 50,
             },
             {
+              'ForecastHour': '2026090510',
+              'ForecastTemperature': 28.8,
+            },
+            {
               'ForecastHour': '2026090515',
               'ForecastTemperature': 31.0,
               'ForecastWeather': 62,
+            },
+            {
+              'ForecastHour': '2026090516',
+              'ForecastTemperature': 30.5,
             },
             {
               'ForecastHour': '2026090600',
@@ -118,7 +126,7 @@ Date/Time,Temperature,RH
         dayStart: dayStart,
         dayEnd: dayEnd,
       );
-      expect(indexed.tempsC.length, 3); // 09, 15, and next-day 00 (dayEnd)
+      expect(indexed.tempsC.length, 5); // 09, 10, 15, 16, and next-day 00 (dayEnd)
       expect(
         indexed.tempsC[tz.TZDateTime(hk, 2026, 9, 5, 9).millisecondsSinceEpoch],
         28.4,
@@ -142,6 +150,32 @@ Date/Time,Temperature,RH
         indexed.weatherIconCodes[
             tz.TZDateTime(hk, 2026, 9, 6).millisecondsSinceEpoch],
         75,
+      );
+      // Intermediate hours without explicit ForecastWeather inherit prior icon.
+      expect(
+        indexed.weatherIconCodes[
+            tz.TZDateTime(hk, 2026, 9, 5, 10).millisecondsSinceEpoch],
+        50,
+      );
+      expect(
+        indexed.weatherIconCodes[
+            tz.TZDateTime(hk, 2026, 9, 5, 16).millisecondsSinceEpoch],
+        62,
+      );
+    });
+
+    test('expandOcfWeatherIconCodes fills every hour', () {
+      final filled = expandOcfWeatherIconCodes(
+        hourKeys: [1, 2, 3, 4, 5, 6],
+        sparseCodes: {1: 50, 4: 60},
+      );
+      expect(filled, {1: 50, 2: 50, 3: 50, 4: 60, 5: 60, 6: 60});
+      expect(
+        expandOcfWeatherIconCodes(
+          hourKeys: [1, 2, 3],
+          sparseCodes: {3: 62},
+        ),
+        {1: 62, 2: 62, 3: 62},
       );
     });
 

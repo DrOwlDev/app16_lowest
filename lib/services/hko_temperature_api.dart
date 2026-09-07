@@ -258,7 +258,41 @@ List<({DateTime utc, double tempC})> parseHkocCsvSamples(String csvBody) {
     final icon = normalizeHkoWeatherIconCode(rawCode);
     if (icon != null) weatherIconCodes[key] = icon;
   }
-  return (tempsC: tempsC, weatherIconCodes: weatherIconCodes);
+  return (
+    tempsC: tempsC,
+    weatherIconCodes: expandOcfWeatherIconCodes(
+      hourKeys: tempsC.keys,
+      sparseCodes: weatherIconCodes,
+    ),
+  );
+}
+
+/// OCF emits [ForecastWeather] about every 3 hours; expand so every forecast
+/// hour gets an icon (forward-fill, then back-fill before the first code).
+Map<int, int> expandOcfWeatherIconCodes({
+  required Iterable<int> hourKeys,
+  required Map<int, int> sparseCodes,
+}) {
+  if (sparseCodes.isEmpty) return {};
+  final hours = hourKeys.toList()..sort();
+  if (hours.isEmpty) return Map<int, int>.from(sparseCodes);
+
+  final out = <int, int>{};
+  int? last;
+  for (final h in hours) {
+    final explicit = sparseCodes[h];
+    if (explicit != null) last = explicit;
+    if (last != null) out[h] = last;
+  }
+
+  int? next;
+  for (var i = hours.length - 1; i >= 0; i--) {
+    final h = hours[i];
+    final explicit = sparseCodes[h];
+    if (explicit != null) next = explicit;
+    if (!out.containsKey(h) && next != null) out[h] = next;
+  }
+  return out;
 }
 
 /// Index OCF hourly forecast temperatures (°C) for the local day window.
