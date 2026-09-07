@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../services/hko_temperature_api.dart';
+import '../services/hko_weather_icons.dart';
 import '../services/station_temperature_api.dart';
 
 /// Daily hourly temperature chart (observed + forecast) with a "now" line.
@@ -86,6 +88,7 @@ class DailyTemperatureChart extends StatelessWidget {
     const maxColor = Color(0xFFEA580C);
     const maxStroke = Color(0xFFC2410C);
     const nowColor = Color(0xFFDC2626);
+    const leftTitleWidth = 36.0;
     double? dailyMinTemp;
     double? dailyMaxTemp;
     for (final p in points) {
@@ -93,11 +96,47 @@ class DailyTemperatureChart extends StatelessWidget {
       if (p.isDailyMaximum) dailyMaxTemp ??= p.temperature;
     }
 
+    final showHkoForecastIcons = series.siteId == HkoTemperatureApi.stationId;
+    final forecastIconPoints = [
+      for (final p in forecastPoints)
+        if (p.weatherIconCode != null) p,
+    ];
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (showHkoForecastIcons && forecastIconPoints.isNotEmpty)
+            SizedBox(
+              height: 28,
+              child: Padding(
+                padding: const EdgeInsets.only(left: leftTitleWidth, right: 4),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final span = (dayEndMs - dayMs).abs();
+                    if (span <= 0 || width <= 0) {
+                      return const SizedBox.shrink();
+                    }
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (final p in forecastIconPoints)
+                          _HkoForecastWeatherIcon(
+                            left: ((p.localHourStart.millisecondsSinceEpoch
+                                            .toDouble() -
+                                        dayMs) /
+                                    span) *
+                                width,
+                            code: p.weatherIconCode!,
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
           SizedBox(
             height: height,
             child: Padding(
@@ -203,7 +242,7 @@ class DailyTemperatureChart extends StatelessWidget {
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 36,
+                        reservedSize: leftTitleWidth,
                         interval: _niceInterval(maxY - minY),
                         getTitlesWidget: (value, meta) {
                           if (value == meta.min || value == meta.max) {
@@ -579,6 +618,53 @@ class _TemperaturePointsTable extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// HKO forecast weather icon anchored above the yellow series timeline.
+class _HkoForecastWeatherIcon extends StatelessWidget {
+  const _HkoForecastWeatherIcon({
+    required this.left,
+    required this.code,
+  });
+
+  final double left;
+  final int code;
+
+  static const _size = 22.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = hkoWeatherIconCaption(code);
+    return Positioned(
+      left: left - _size / 2,
+      top: 2,
+      width: _size,
+      height: _size,
+      child: Tooltip(
+        message: caption,
+        waitDuration: const Duration(milliseconds: 400),
+        child: Image.network(
+          hkoWeatherIconImageUrl(code),
+          width: _size,
+          height: _size,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (context, error, stackTrace) => Icon(
+            _fallbackIcon(code),
+            size: 18,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static IconData _fallbackIcon(int code) {
+    if (code >= 62 && code <= 65) return Icons.umbrella;
+    if (code >= 70 && code <= 77) return Icons.nights_stay;
+    if (code >= 50 && code <= 54) return Icons.wb_sunny;
+    return Icons.cloud;
   }
 }
 

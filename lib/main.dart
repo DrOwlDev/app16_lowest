@@ -607,16 +607,23 @@ class _MarketListPageState extends State<MarketListPage> {
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     value: _searchController.text.trim().toLowerCase() ==
                         'hong kong',
-                    onChanged: (value) {
-                      if (value ?? false) {
+                    onChanged: (value) async {
+                      final on = value ?? false;
+                      if (on) {
+                        setState(() {
+                          _marketType = _MarketTypeFilter.both;
+                          _strategy = _ListStrategy.showAll;
+                        });
                         _searchController.text = 'Hong Kong';
                         _searchController.selection =
                             TextSelection.collapsed(
                           offset: _searchController.text.length,
                         );
-                      } else {
-                        _searchController.clear();
+                        return;
                       }
+                      setState(() => _marketType = _MarketTypeFilter.low);
+                      _searchController.clear();
+                      await _onStrategyChanged(_ListStrategy.lockedWithNos);
                     },
                   ),
                   const Text(

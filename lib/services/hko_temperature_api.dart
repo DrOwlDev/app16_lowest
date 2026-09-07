@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'city_timezones.dart';
+import 'hko_weather_icons.dart';
 import 'station_temperature_api.dart';
 
 /// Fetches HKO observed (hkoc.csv) + OCF forecast for Hong Kong markets.
@@ -75,7 +76,7 @@ class HkoTemperatureApi {
     );
 
     final observedC = await obsFuture;
-    final forecastC = await forecastFuture;
+    final forecast = await forecastFuture;
     final latestObservation = await latestFuture;
 
     final obsSource =
@@ -88,7 +89,8 @@ class HkoTemperatureApi {
       dayEnd: dayEnd,
       nowLocal: nowLocal,
       observedC: observedC,
-      forecastC: forecastC,
+      forecastC: forecast.tempsC,
+      forecastWeatherCodes: forecast.weatherIconCodes,
       unit: unitNorm,
       observedDataSource: obsSource,
       forecastDataSource: forecastDataSource,
@@ -128,7 +130,8 @@ class HkoTemperatureApi {
     }
   }
 
-  Future<Map<int, double>> _fetchOcfForecastC({
+  Future<({Map<int, double> tempsC, Map<int, int> weatherIconCodes})>
+      _fetchOcfForecastC({
     required tz.Location location,
     required tz.TZDateTime dayStart,
     required tz.TZDateTime dayEnd,
@@ -138,17 +141,21 @@ class HkoTemperatureApi {
         Uri.parse(ocfForecastUrl),
         headers: _jsonHeaders,
       );
-      if (response.statusCode != 200) return {};
+      if (response.statusCode != 200) {
+        return (tempsC: <int, double>{}, weatherIconCodes: <int, int>{});
+      }
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map) return {};
-      return indexOcfHourlyForecastC(
+      if (decoded is! Map) {
+        return (tempsC: <int, double>{}, weatherIconCodes: <int, int>{});
+      }
+      return indexOcfHourlyForecast(
         json: Map<String, dynamic>.from(decoded),
         location: location,
         dayStart: dayStart,
         dayEnd: dayEnd,
       );
     } catch (_) {
-      return {};
+      return (tempsC: <int, double>{}, weatherIconCodes: <int, int>{});
     }
   }
 
@@ -210,16 +217,20 @@ List<({DateTime utc, double tempC})> parseHkocCsvSamples(String csvBody) {
   return samples;
 }
 
-/// Index OCF hourly forecast temperatures (°C) for the local day window.
-Map<int, double> indexOcfHourlyForecastC({
+/// Index OCF hourly forecast temperatures (°C) and weather icon codes.
+({Map<int, double> tempsC, Map<int, int> weatherIconCodes})
+    indexOcfHourlyForecast({
   required Map<String, dynamic> json,
   required tz.Location location,
   required tz.TZDateTime dayStart,
   required tz.TZDateTime dayEnd,
 }) {
   final hourly = json['HourlyWeatherForecast'];
-  if (hourly is! List) return {};
-  final out = <int, double>{};
+  if (hourly is! List) {
+    return (tempsC: <int, double>{}, weatherIconCodes: <int, int>{});
+  }
+  final tempsC = <int, double>{};
+  final weatherIconCodes = <int, int>{};
   for (final item in hourly) {
     if (item is! Map) continue;
     final hourRaw = item['ForecastHour']?.toString() ?? '';
@@ -235,9 +246,34 @@ Map<int, double> indexOcfHourlyForecastC({
       wall.hour,
     );
     if (hourStart.isBefore(dayStart) || hourStart.isAfter(dayEnd)) continue;
-    out[hourStart.millisecondsSinceEpoch] = temp;
+    final key = hourStart.millisecondsSinceEpoch;
+    tempsC[key] = temp;
+    final iconRaw = item['ForecastWeather'];
+    int? rawCode;
+    if (iconRaw is num) {
+      rawCode = iconRaw.toInt();
+    } else if (iconRaw != null) {
+      rawCode = int.tryParse(iconRaw.toString());
+    }
+    final icon = normalizeHkoWeatherIconCode(rawCode);
+    if (icon != null) weatherIconCodes[key] = icon;
   }
-  return out;
+  return (tempsC: tempsC, weatherIconCodes: weatherIconCodes);
+}
+
+/// Index OCF hourly forecast temperatures (°C) for the local day window.
+Map<int, double> indexOcfHourlyForecastC({
+  required Map<String, dynamic> json,
+  required tz.Location location,
+  required tz.TZDateTime dayStart,
+  required tz.TZDateTime dayEnd,
+}) {
+  return indexOcfHourlyForecast(
+    json: json,
+    location: location,
+    dayStart: dayStart,
+    dayEnd: dayEnd,
+  ).tempsC;
 }
 
 /// Parse `latest_1min_temperature.csv` row for HK Observatory.

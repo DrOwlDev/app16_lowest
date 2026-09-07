@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:app16_lowest/models/market_event.dart';
 import 'package:app16_lowest/services/city_timezones.dart';
 import 'package:app16_lowest/services/hko_temperature_api.dart';
+import 'package:app16_lowest/services/hko_weather_icons.dart';
 import 'package:app16_lowest/services/station_temperature_api.dart';
 
 void main() {
@@ -88,24 +89,28 @@ Date/Time,Temperature,RH
       final hk = tz.getLocation('Asia/Hong_Kong');
       final dayStart = tz.TZDateTime(hk, 2026, 9, 5);
       final dayEnd = dayStart.add(const Duration(days: 1));
-      final indexed = indexOcfHourlyForecastC(
+      final indexed = indexOcfHourlyForecast(
         json: {
           'HourlyWeatherForecast': [
             {
               'ForecastHour': '2026090509',
               'ForecastTemperature': 28.4,
+              'ForecastWeather': 50,
             },
             {
               'ForecastHour': '2026090515',
               'ForecastTemperature': 31.0,
+              'ForecastWeather': 62,
             },
             {
               'ForecastHour': '2026090600',
               'ForecastTemperature': 27.0,
+              'ForecastWeather': 751,
             },
             {
               'ForecastHour': '2026090700',
               'ForecastTemperature': 26.0,
+              'ForecastWeather': 60,
             },
           ],
         },
@@ -113,15 +118,66 @@ Date/Time,Temperature,RH
         dayStart: dayStart,
         dayEnd: dayEnd,
       );
-      expect(indexed.length, 3); // 09, 15, and next-day 00 (dayEnd)
+      expect(indexed.tempsC.length, 3); // 09, 15, and next-day 00 (dayEnd)
       expect(
-        indexed[tz.TZDateTime(hk, 2026, 9, 5, 9).millisecondsSinceEpoch],
+        indexed.tempsC[tz.TZDateTime(hk, 2026, 9, 5, 9).millisecondsSinceEpoch],
         28.4,
       );
       expect(
-        indexed[tz.TZDateTime(hk, 2026, 9, 6).millisecondsSinceEpoch],
+        indexed.tempsC[tz.TZDateTime(hk, 2026, 9, 6).millisecondsSinceEpoch],
         27.0,
       );
+      expect(
+        indexed.weatherIconCodes[
+            tz.TZDateTime(hk, 2026, 9, 5, 9).millisecondsSinceEpoch],
+        50,
+      );
+      expect(
+        indexed.weatherIconCodes[
+            tz.TZDateTime(hk, 2026, 9, 5, 15).millisecondsSinceEpoch],
+        62,
+      );
+      // OCF composite 751 normalizes to official icon 75.
+      expect(
+        indexed.weatherIconCodes[
+            tz.TZDateTime(hk, 2026, 9, 6).millisecondsSinceEpoch],
+        75,
+      );
+    });
+
+    test('normalizeHkoWeatherIconCode maps composites', () {
+      expect(normalizeHkoWeatherIconCode(50), 50);
+      expect(normalizeHkoWeatherIconCode(751), 75);
+      expect(normalizeHkoWeatherIconCode(711), 71);
+      expect(normalizeHkoWeatherIconCode(999), isNull);
+    });
+
+    test('merge attaches HKO weather icons only on forecast hours', () {
+      final hk = tz.getLocation('Asia/Hong_Kong');
+      final dayStart = tz.TZDateTime(hk, 2026, 9, 5);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final now = tz.TZDateTime(hk, 2026, 9, 5, 12);
+      final hour15 = tz.TZDateTime(hk, 2026, 9, 5, 15);
+      final points = mergeHourlySeries(
+        dayStart: dayStart,
+        dayEnd: dayEnd,
+        nowLocal: now,
+        observedC: {
+          tz.TZDateTime(hk, 2026, 9, 5, 10).millisecondsSinceEpoch: 28,
+        },
+        forecastC: {
+          hour15.millisecondsSinceEpoch: 30,
+        },
+        forecastWeatherCodes: {
+          hour15.millisecondsSinceEpoch: 60,
+        },
+        unit: 'C',
+      );
+      final forecast = points.where((p) => p.kind == TempPointKind.forecast);
+      expect(forecast, isNotEmpty);
+      expect(forecast.first.weatherIconCode, 60);
+      final observed = points.where((p) => p.kind == TempPointKind.observed);
+      expect(observed.every((p) => p.weatherIconCode == null), isTrue);
     });
 
     test('parseHkoLatestTemperatureCsv finds HK Observatory', () {

@@ -81,10 +81,13 @@ UI defaults: white scaffold/cards; dense layout (no wasteful top banners). Each 
 | Find Locked Market (≥ 90%) with No's Opportunities | ≥1 outcome with chance ≥ 90%, **and** another with chance &lt; 90% where Buy No &gt; 1¢ and not `--` |
 | Find Markets with only 1 Buy Yes &gt;95c | **Exactly one** temperature with Buy Yes ≥ 95¢ |
 
-### Other filters (on by default)
+### Other filters
 
-- **Hide thin rows**: hide outcomes where Buy Yes &lt; 1¢ **and** Buy No is `--` (not volume / chance filters).
-- **Hide non-Min/Max table rows**: temperature **table** only — keep Extreme Min/Max + all Forecasted rows; chart points unchanged.
+- **HKO** checkbox (next to Search city):
+  - **Checked** → search `Hong Kong`, Type **Low & High**, Strategy **Show All**
+  - **Unchecked** → clear search, Type **Low**, Strategy locked-with-Nos
+- **Hide thin rows** (on by default): hide outcomes where Buy Yes &lt; 1¢ **and** Buy No is `--` (not volume / chance filters).
+- **Hide non-Min/Max table rows** (on by default): temperature **table** only — keep Extreme Min/Max + all Forecasted rows; chart points unchanged.
 - **Search city**: title / city substring.
 
 ### Odds / chance (match Polymarket site)
@@ -107,7 +110,8 @@ Shown when the market is **chartable** (see [Resolution sources](#resolution-sou
 - Blue min / orange max lines + stars (full decimal precision from series).
 - Red **now** line; label uses latest station obs temp/time when available.
 - Table: Extreme column next to Temp; optional Min/Max row filter above.
-- **Settlement HUD** (when series loaded): for **Low** — Obs min / Fcst rem (min) / Leading / warmer buckets dead; for **High** — Obs max / Fcst rem (max) / Leading / colder buckets dead. Physics-dead outcomes get a **Dead** chip (low: final min can only fall; high: final max can only rise). Obs min/max/Dead use **real observed points only** (never forecast extrema).
+- **Hong Kong only**: HKO-style weather icons above the yellow forecast series (OCF `ForecastWeather`, ~3-hourly). Observed side stays temperature-only.
+- **Settlement HUD** (when series loaded): full English labels with hover tooltips — Observed minimum/maximum, Forecast remaining minimum/maximum, Leading outcome; warmer/colder outcomes eliminated. Physics-dead outcomes get an **Eliminated** chip (low: final min can only fall; high: final max can only rise). Obs min/max/Eliminated use **real observed points only** (never forecast extrema).
 - **In-app alerts** (SnackBar + dismissible strip): new lower obs min (low markets) or higher obs max (high markets) on expanded charts; newly appearing lock-with-No after refresh.
 
 ### Current Positions
@@ -133,7 +137,7 @@ WU airport history  → StationTemperatureApi (ICAO from URL path)
 |---|---|---|---|---|---|
 | **NOAA WRH** | `weather.gov/wrh/timeseries?site=` | aviationweather.gov METAR | NWS hourly → Open-Meteo NBM (`ncep_nbm_conus`) → default Open-Meteo | `City - siteId` | No |
 | **Weather Underground airport** | `wunderground.com/history/daily/.../{ICAO}` (e.g. Jinan **ZSJN**, Taipei **RCSS**) | METAR for ICAO; if AWC empty (e.g. ZSJN) → Weather.com historical (same feed as WU Daily Observations) | Open-Meteo at airport lat/lon (NWS/NBM don’t cover CN/TW) | `City - ICAO` | **Yes** (keep) |
-| **Hong Kong HKO** | `weather.gov.hk` / `hko.gov.hk` or city name Hong Kong | `hkoc.csv` (minute, HKT) | OCF `HKO.xml`; now-label from latest 1-min CSV | city name | **Yes** |
+| **Hong Kong HKO** | `weather.gov.hk` / `hko.gov.hk` or city name Hong Kong | `hkoc.csv` (minute, HKT) | OCF `HKO.xml`; now-label from latest 1-min CSV; **forecast weather icons** above yellow series from OCF `ForecastWeather` (~3-hourly, HKO only) | city name | **Yes** |
 
 Notes:
 
@@ -162,10 +166,12 @@ Notes:
 | `lib/models/temp_outcome_bucket.dart` | Settlement bucket parse + kind-aware physics-dead outcomes |
 | `lib/models/market_event.dart` | Odds/chance, strategies, EOD, chart eligibility (WRH / WU / HKO) |
 | `lib/services/station_temperature_api.dart` | METAR + forecast cascade + Weather.com historical fallback |
-| `lib/services/hko_temperature_api.dart` | Hong Kong observed + OCF |
+| `lib/services/hko_temperature_api.dart` | Hong Kong observed + OCF (temps + `ForecastWeather` icons) |
+| `lib/services/hko_weather_icons.dart` | HKO icon code normalize / caption / image URL |
 | `lib/pages/markets_page.dart` | Sites directory |
 | `lib/pages/positions_page.dart` | Positions + live odds/EOD + deep-link |
-| `lib/widgets/settlement_bucket_hud.dart` | Settlement HUD strip |
+| `lib/widgets/settlement_bucket_hud.dart` | Settlement HUD strip (full English + tooltips) |
+| `lib/widgets/daily_temperature_chart.dart` | Temp chart; HK forecast weather icon strip |
 | `tool/export_markets.dart` | Pages snapshot exporter |
 | `.github/workflows/deploy-pages.yml` | Web build + gh-pages deploy on `main` |
 | `.github/workflows/refresh-data.yml` | ~5‑min snapshot refresh |
@@ -178,4 +184,4 @@ Notes:
 flutter test
 ```
 
-Coverage includes chance/strategy/EOD parsing, WRH METAR merge, HKO parsers, and WU ICAO + Weather.com historical fallback (Jinan/Taipei isolation from HKO/WRH).
+Coverage includes chance/strategy/EOD parsing, WRH METAR merge, HKO parsers (including OCF weather icons), and WU ICAO + Weather.com historical fallback (Jinan/Taipei isolation from HKO/WRH).

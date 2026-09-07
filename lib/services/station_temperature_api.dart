@@ -16,6 +16,7 @@ class HourlyTempPoint {
     this.dataSource = '',
     this.isDailyMinimum = false,
     this.isDailyMaximum = false,
+    this.weatherIconCode,
   });
 
   /// City-local timestamp for this sample (may be sub-hourly for observations).
@@ -32,10 +33,14 @@ class HourlyTempPoint {
   /// True when this hour ties the observation-day maximum temperature.
   final bool isDailyMaximum;
 
+  /// HKO OCF [ForecastWeather] icon code when present (forecast hours only).
+  final int? weatherIconCode;
+
   HourlyTempPoint copyWith({
     String? dataSource,
     bool? isDailyMinimum,
     bool? isDailyMaximum,
+    int? weatherIconCode,
   }) {
     return HourlyTempPoint(
       localHourStart: localHourStart,
@@ -44,6 +49,7 @@ class HourlyTempPoint {
       dataSource: dataSource ?? this.dataSource,
       isDailyMinimum: isDailyMinimum ?? this.isDailyMinimum,
       isDailyMaximum: isDailyMaximum ?? this.isDailyMaximum,
+      weatherIconCode: weatherIconCode ?? this.weatherIconCode,
     );
   }
 
@@ -54,6 +60,7 @@ class HourlyTempPoint {
         if (dataSource.isNotEmpty) 'dataSource': dataSource,
         if (isDailyMinimum) 'isDailyMinimum': true,
         if (isDailyMaximum) 'isDailyMaximum': true,
+        if (weatherIconCode != null) 'weatherIconCode': weatherIconCode,
       };
 
   factory HourlyTempPoint.fromJson(
@@ -61,6 +68,13 @@ class HourlyTempPoint {
     required tz.Location location,
   }) {
     final kindRaw = json['kind']?.toString() ?? 'forecast';
+    final iconRaw = json['weatherIconCode'];
+    int? iconCode;
+    if (iconRaw is num) {
+      iconCode = iconRaw.toInt();
+    } else if (iconRaw != null) {
+      iconCode = int.tryParse(iconRaw.toString());
+    }
     return HourlyTempPoint(
       localHourStart: _tzFromUtcIso(json['t']?.toString(), location),
       temperature: (json['temp'] as num?)?.toDouble() ?? 0,
@@ -70,6 +84,7 @@ class HourlyTempPoint {
       dataSource: json['dataSource']?.toString() ?? '',
       isDailyMinimum: json['isDailyMinimum'] == true,
       isDailyMaximum: json['isDailyMaximum'] == true,
+      weatherIconCode: iconCode,
     );
   }
 }
@@ -750,6 +765,7 @@ List<HourlyTempPoint> mergeHourlySeries({
       StationTemperatureApi.defaultObservedDataSource,
   String forecastDataSource =
       StationTemperatureApi.openMeteoForecastDataSource,
+  Map<int, int>? forecastWeatherCodes,
 }) {
   final location = dayStart.location;
   final points = <HourlyTempPoint>[];
@@ -799,6 +815,7 @@ List<HourlyTempPoint> mergeHourlySeries({
               temperature: convertTempC(fc, unit),
               kind: TempPointKind.forecast,
               dataSource: forecastDataSource,
+              weatherIconCode: forecastWeatherCodes?[key],
             ),
           );
         }
