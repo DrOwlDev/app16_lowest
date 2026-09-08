@@ -86,8 +86,8 @@ UI defaults: white scaffold/cards; dense layout (no wasteful top banners). Each 
 - **HKO** checkbox (next to Search city):
   - **Checked** → search `Hong Kong`, Type **Low & High**, Strategy **Show All**
   - **Unchecked** → clear search, Type **Low**, Strategy locked-with-Nos
-- **Hide thin rows** (on by default): hide outcomes where Buy Yes &lt; 1¢ **and** Buy No is `--` (not volume / chance filters).
-- **Hide non-Min/Max table rows** (on by default): temperature **table** only — keep Extreme Min/Max + all Forecasted rows; chart points unchanged.
+- **Hide Odds** (on by default): hide outcomes where Buy Yes &lt; 1¢ **and** Buy No is `--` (not volume / chance filters).
+- **Hide Table** (on by default): temperature **table** only — keep Extreme Min/Max + all Forecasted rows; chart points unchanged.
 - **Search city**: title / city substring.
 
 ### Odds / chance (match Polymarket site)

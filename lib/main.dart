@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -12,6 +13,7 @@ import 'pages/markets_page.dart';
 import 'pages/positions_page.dart';
 import 'services/city_timezones.dart';
 import 'services/hko_temperature_api.dart';
+import 'services/open_url.dart';
 import 'services/polymarket_api.dart';
 import 'services/station_temperature_api.dart';
 import 'ui/eod_badge_color.dart';
@@ -433,6 +435,36 @@ class _MarketListPageState extends State<MarketListPage> {
     }
   }
 
+  Future<void> _openUrlInFirefox(String url) async {
+    final ok = await openUrlInFirefox(url);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Firefox')),
+      );
+    }
+  }
+
+  Future<void> _copyToClipboard(String text, String label) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied $label'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _filterCityLowAndHigh(String city) {
+    final trimmed = city.trim();
+    if (trimmed.isEmpty) return;
+    setState(() => _marketType = _MarketTypeFilter.both);
+    _searchController.text = trimmed;
+    _searchController.selection = TextSelection.collapsed(
+      offset: trimmed.length,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
@@ -644,7 +676,7 @@ class _MarketListPageState extends State<MarketListPage> {
                   ),
                   const Flexible(
                     child: Text(
-                      'Hide thin rows (Yes <1¢ & No --)',
+                      'Hide Odds',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -663,7 +695,7 @@ class _MarketListPageState extends State<MarketListPage> {
                   ),
                   const Flexible(
                     child: Text(
-                      'Hide non-Min/Max table rows',
+                      'Hide Table',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -860,6 +892,19 @@ class _MarketListPageState extends State<MarketListPage> {
             onOpenHkoPortal: isHongKongTemperatureMarket(event)
                 ? () => _openUrl(HkoTemperatureApi.regionalPortalUrl)
                 : null,
+            onOpenInFirefox: isWindowsDesktop
+                ? () => _openUrlInFirefox(event.polymarketUrl)
+                : null,
+            onCopyPolymarketUrl: () => _copyToClipboard(
+                  event.polymarketUrl,
+                  'Polymarket URL',
+                ),
+            onCopyCityName: event.cityName.trim().isEmpty
+                ? null
+                : () => _copyToClipboard(event.cityName, 'city name'),
+            onShowCityLowAndHigh: event.cityName.trim().isEmpty
+                ? null
+                : () => _filterCityLowAndHigh(event.cityName),
           );
         },
       ),
@@ -940,6 +985,10 @@ class _MarketEventTile extends StatefulWidget {
     required this.onOpen,
     required this.onOpenResolution,
     this.onOpenHkoPortal,
+    this.onOpenInFirefox,
+    required this.onCopyPolymarketUrl,
+    this.onCopyCityName,
+    this.onShowCityLowAndHigh,
   });
 
   final MarketEvent event;
@@ -955,6 +1004,10 @@ class _MarketEventTile extends StatefulWidget {
   final VoidCallback onOpen;
   final VoidCallback onOpenResolution;
   final VoidCallback? onOpenHkoPortal;
+  final VoidCallback? onOpenInFirefox;
+  final VoidCallback onCopyPolymarketUrl;
+  final VoidCallback? onCopyCityName;
+  final VoidCallback? onShowCityLowAndHigh;
 
   @override
   State<_MarketEventTile> createState() => _MarketEventTileState();
@@ -1157,6 +1210,9 @@ class _MarketEventTileState extends State<_MarketEventTile> {
     final fill = _marketConvergenceFill(leadingYes);
     final remaining = event.timeToLocalEndOfDay;
     final eodLabel = formatTimeToEndOfDay(remaining);
+    final cityNow = CityTimezones.nowInCity(event.cityName);
+    final cityLocalTimeLabel =
+        cityNow == null ? null : DateFormat.Hm().format(cityNow);
     final visible = widget.hideThinOutcomes
         ? _markets.where((m) => !m.isThinOutcomeRow).toList()
         : _markets;
@@ -1224,6 +1280,12 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                           label: widget.dayFormat.format(day.toLocal()),
                           color: _dateBadgeColor(day.toLocal()),
                         ),
+                      if (cityLocalTimeLabel != null)
+                        _MetaPill(
+                          icon: Icons.access_time,
+                          label: cityLocalTimeLabel,
+                          color: const Color(0xFF475569),
+                        ),
                       _MetaPill(
                         icon: Icons.schedule,
                         label: eodLabel,
@@ -1278,6 +1340,45 @@ class _MarketEventTileState extends State<_MarketEventTile> {
                         onPressed: widget.onOpenResolution,
                         icon: Icon(
                           Icons.cloud_outlined,
+                          size: 18,
+                          color: accent,
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: 'Copy Polymarket URL',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: widget.onCopyPolymarketUrl,
+                      icon: Icon(Icons.link, size: 18, color: accent),
+                    ),
+                    if (widget.onCopyCityName != null)
+                      IconButton(
+                        tooltip: 'Copy city name',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onCopyCityName,
+                        icon: Icon(
+                          Icons.content_copy,
+                          size: 16,
+                          color: accent,
+                        ),
+                      ),
+                    if (widget.onShowCityLowAndHigh != null)
+                      IconButton(
+                        tooltip: 'Search this city (Low & High)',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onShowCityLowAndHigh,
+                        icon: Icon(
+                          Icons.filter_alt_outlined,
+                          size: 18,
+                          color: accent,
+                        ),
+                      ),
+                    if (widget.onOpenInFirefox != null)
+                      IconButton(
+                        tooltip: 'Open in Firefox',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onOpenInFirefox,
+                        icon: Icon(
+                          Icons.open_in_browser,
                           size: 18,
                           color: accent,
                         ),

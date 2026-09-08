@@ -13,7 +13,8 @@ void main() {
     expect(find.text('Sites'), findsOneWidget);
     expect(find.text('Current Positions'), findsOneWidget);
     expect(find.text('Search city…'), findsOneWidget);
-    expect(find.textContaining('Hide thin rows'), findsOneWidget);
+    expect(find.textContaining('Hide Odds'), findsOneWidget);
+    expect(find.textContaining('Hide Table'), findsOneWidget);
   });
 
   test('MarketEvent parses nested stringified outcomes', () {
