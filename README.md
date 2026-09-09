@@ -88,7 +88,7 @@ UI defaults: white scaffold/cards; dense layout (no wasteful top banners). Each 
   - **Unchecked** → clear search, Type **Low**, Strategy locked-with-Nos
 - **Hide Odds** (on by default): hide outcomes where Buy Yes &lt; 1¢ **and** Buy No is `--` (not volume / chance filters).
 - **Hide Table** (on by default): temperature **table** only — keep Extreme Min/Max + all Forecasted rows; chart points unchanged.
-- **Search city**: title / city substring.
+- **Search city**: title / city substring; any non-empty query forces Type **Low & High** and Strategy **Show All**.
 
 ### Odds / chance (match Polymarket site)
 

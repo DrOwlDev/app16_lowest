@@ -192,7 +192,7 @@ class _MarketListPageState extends State<MarketListPage> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
+    _searchController.addListener(_onSearchChanged);
     _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
@@ -204,6 +204,20 @@ class _MarketListPageState extends State<MarketListPage> {
         _load(silent: true);
       },
     );
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty &&
+        (_marketType != _MarketTypeFilter.both ||
+            _strategy != _ListStrategy.showAll)) {
+      setState(() {
+        _marketType = _MarketTypeFilter.both;
+        _strategy = _ListStrategy.showAll;
+      });
+      return;
+    }
+    setState(() {});
   }
 
   @override
