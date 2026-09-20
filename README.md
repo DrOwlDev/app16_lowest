@@ -8,9 +8,8 @@ with expand charts aligned to each market’s **resolution source**.
 | Platform | Data |
 |---|---|
 | **Windows / Android** | Live Polymarket Gamma + CLOB; live weather APIs for charts |
-| **GitHub Pages** | Same-origin `data/markets.json` (odds + preloaded temp series; no browser CORS) |
+| **Web (local build only)** | Same-origin `data/markets.json` (odds + preloaded temp series; no browser CORS). Not hosted on GitHub Pages. |
 
-- Live site: https://drowldev.github.io/app16_lowest/
 - Android package id: `dev.drowl.app16` (release APK/AAB signed from local `android/key.properties` + keystore; not committed)
 - Proxy wallet for **Current Positions**: `0x8cEF3c1B592953D61EEE2bC9375C5944A8926B6d`
 - Gamma tags: Lowest `104597` + Highest `104596` (unified list, deduped by event id)
@@ -32,16 +31,12 @@ flutter build apk --release
 flutter build appbundle --release
 ```
 
-Web snapshot + build:
+Optional local web snapshot + build (not deployed):
 
 ```bash
 dart run tool/export_markets.dart web/data/markets.json
-flutter build web --release --base-href /app16_lowest/
+flutter build web --release
 ```
-
-- Deploy: Flutter web on every `main` push ([Deploy GitHub Pages](https://github.com/DrOwlDev/app16_lowest/actions/workflows/deploy-pages.yml))
-- Data refresh workflow: updates `gh-pages` `data/markets.json` about every **5 minutes**
-  ([Refresh Pages Data](https://github.com/DrOwlDev/app16_lowest/actions/workflows/refresh-data.yml))
 
 ---
 
@@ -172,9 +167,7 @@ Notes:
 | `lib/pages/positions_page.dart` | Positions + live odds/EOD + deep-link |
 | `lib/widgets/settlement_bucket_hud.dart` | Settlement HUD strip (full English + tooltips) |
 | `lib/widgets/daily_temperature_chart.dart` | Temp chart; HK forecast weather icon strip |
-| `tool/export_markets.dart` | Pages snapshot exporter |
-| `.github/workflows/deploy-pages.yml` | Web build + gh-pages deploy on `main` |
-| `.github/workflows/refresh-data.yml` | ~5‑min snapshot refresh |
+| `tool/export_markets.dart` | Optional local web snapshot exporter |
 
 ---
 

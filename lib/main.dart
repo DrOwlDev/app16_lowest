@@ -749,15 +749,6 @@ class _MarketListPageState extends State<MarketListPage> {
                       color: scheme.primary,
                     ),
                   ),
-                  if (kIsWeb)
-                    IconButton(
-                      tooltip: 'Trigger data refresh on GitHub Actions',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _openUrl(
-                        'https://github.com/DrOwlDev/app16_lowest/actions/workflows/refresh-data.yml',
-                      ),
-                      icon: const Icon(Icons.cloud_sync_outlined, size: 18),
-                    ),
                   IconButton(
                     tooltip: 'Open Polymarket',
                     visualDensity: VisualDensity.compact,
@@ -1145,7 +1136,7 @@ class _MarketEventTileState extends State<_MarketEventTile> {
       return;
     }
 
-    // GitHub Pages cannot call HKO / weather.gov (CORS); use snapshot.
+    // Browsers cannot call HKO / weather.gov (CORS); use the snapshot.
     if (kIsWeb) {
       final preloaded = widget.event.temperatureSeries;
       setState(() {

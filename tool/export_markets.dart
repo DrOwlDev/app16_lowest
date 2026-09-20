@@ -8,7 +8,7 @@ import 'package:app16_lowest/services/polymarket_api.dart';
 import 'package:app16_lowest/services/station_temperature_api.dart';
 
 /// Fetches live Polymarket low-temp markets (+ CLOB asks) and writes
-/// `web/data/markets.json` for GitHub Pages.
+/// `web/data/markets.json` for a local web build.
 ///
 /// Also preloads WRH + WU-ICAO + HKO temperature series so the web app can
 /// render charts without browser CORS to weather APIs.

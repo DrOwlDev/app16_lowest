@@ -204,7 +204,7 @@ class MarketEvent {
   final String description;
   final String resolutionSource;
 
-  /// Preloaded hourly chart series (GitHub Pages snapshot). Null on live Gamma.
+  /// Preloaded hourly chart series (web snapshot). Null on live Gamma.
   final DailyTemperatureSeries? temperatureSeries;
 
   String get polymarketUrl => 'https://polymarket.com/event/$slug';

@@ -6,7 +6,7 @@ import '../models/market_event.dart';
 
 /// Fetches Lowest + Highest Temperature events from Polymarket Gamma API.
 ///
-/// When [preferStaticSnapshot] is true (GitHub Pages web build), loads a
+/// When [preferStaticSnapshot] is true (web build), loads a
 /// same-origin snapshot at `data/markets.json` so browser CORS to Polymarket
 /// is not required. Windows/Android keep live Gamma + CLOB calls.
 class PolymarketApi {
